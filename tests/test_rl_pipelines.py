@@ -9,6 +9,7 @@ from agent.model import ActorCriticPPO
 from env.rewards import RetroRewardEngine
 from env.retro_env import HeadlessRetroEnv
 from agent.train import StableBaselines3PPOTrainer
+from audit.audit_logger import AuditLogger
 
 def test_platformer_reward_calculator():
     calc = PlatformerRewardCalculator(distance_weight=1.0, score_weight=0.1)
@@ -16,37 +17,51 @@ def test_platformer_reward_calculator():
 
     # Forward movement + score
     reward1 = calc.calculate_reward({"x_pos": 10.0, "score": 100, "lives": 3, "health": 16})
-    assert reward1 > 0  # 10*1.0 + 100*0.1 - 0.01
+    assert reward1 > 0  # 10*1.0 + 100*0.1 - 0.02
 
-    # Life loss penalty
+    # Life loss penalty (balanced around -25.0)
     reward_death = calc.calculate_reward({"x_pos": 10.0, "score": 100, "lives": 2, "health": 16})
-    assert reward_death < -90.0
+    assert -30.0 < reward_death < -20.0
 
 def test_mock_platformer_env_gymnasium_specs():
-    env = MockPlatformerEnv(observation_shape=(84, 84, 1))
+    env = MockPlatformerEnv(frame_shape=(84, 84), num_stack=4)
     obs, info = env.reset()
 
-    assert obs.shape == (84, 84, 1)
+    # 4-frame stacked observation shape (4, 84, 84)
+    assert obs.shape == (4, 84, 84)
     assert info["lives"] == 3
+    assert info["max_steps"] == 400
 
     next_obs, reward, terminated, truncated, next_info = env.step(1)  # Move RIGHT
-    assert next_obs.shape == (84, 84, 1)
+    assert next_obs.shape == (4, 84, 84)
     assert isinstance(reward, float)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
     assert next_info["x_pos"] == 2.0
 
+def test_dynamic_timeout_and_reward_hacking_detection():
+    env = MockPlatformerEnv(frame_shape=(84, 84), num_stack=4, base_max_steps=400)
+    obs, info = env.reset()
+
+    # Advance x_pos beyond 100px to trigger dynamic timeout extension (+50 steps)
+    for _ in range(55):
+        obs, reward, terminated, truncated, info = env.step(6) # RIGHT+JUMP
+
+    assert info["max_x_pos"] >= 100.0
+    assert info["max_steps"] == 450  # 400 base + 50 extension
+
 def test_pytorch_ppo_actor_critic_shapes():
-    model = ActorCriticPPO(input_channels=1, num_actions=6)
-    fake_obs = torch.zeros((1, 1, 84, 84), dtype=torch.float32)
+    model = ActorCriticPPO(input_channels=4, num_actions=8)
+    fake_obs = torch.zeros((1, 4, 84, 84), dtype=torch.float32)
 
     logits, value = model(fake_obs)
-    assert logits.shape == (1, 6)
+    assert logits.shape == (1, 8)
     assert value.shape == (1, 1)
 
-    action, log_prob, val_est = model.get_action(fake_obs)
-    assert 0 <= action < 6
+    action, log_prob, val_est, entropy = model.get_action(fake_obs)
+    assert 0 <= action < 8
     assert isinstance(log_prob, torch.Tensor)
+    assert isinstance(entropy, torch.Tensor)
 
 def test_retro_reward_engine():
     engine = RetroRewardEngine()
@@ -60,14 +75,14 @@ def test_retro_reward_engine():
     assert r_dmg < 0.0
 
 def test_headless_retro_env():
-    env = HeadlessRetroEnv(obs_shape=(84, 84, 3))
+    env = HeadlessRetroEnv(frame_shape=(84, 84), num_stack=4)
     obs, info = env.reset()
 
-    assert obs.shape == (84, 84, 3)
+    assert obs.shape == (4, 84, 84)
     assert info["health"] == 16
 
-    obs2, reward, terminated, truncated, info2 = env.step(4)  # WHIP
-    assert obs2.shape == (84, 84, 3)
+    obs2, reward, terminated, truncated, info2 = env.step(5)  # WHIP
+    assert obs2.shape == (4, 84, 84)
     assert info2["score"] == 20
 
 def test_stable_baselines3_ppo_trainer(tmp_path):
@@ -83,3 +98,28 @@ def test_stable_baselines3_ppo_trainer(tmp_path):
 
     assert os.path.exists(ckpt_dir)
     assert len(os.listdir(ckpt_dir)) > 0
+
+def test_anti_reward_hacking_detection(tmp_path):
+    audit_file = str(tmp_path / "test_audit.jsonl")
+    logger = AuditLogger(log_filepath=audit_file)
+
+    env = MockPlatformerEnv(frame_shape=(84, 84), num_stack=4)
+    obs, info = env.reset()
+
+    # Perform 30 WHIP actions without moving
+    for _ in range(30):
+        obs, reward, terminated, truncated, info = env.step(5)  # Action 5 = WHIP
+
+    assert info["reward_hacking_detected"] is True
+
+    # Log to audit logger
+    logger.log_event("reward_hacking_detected", {
+        "episode": 1,
+        "total_reward": 100.0,
+        "max_x_pos": info["max_x_pos"],
+        "warning": "Agent accumulating rewards without horizontal progression."
+    })
+
+    events = logger.read_all_events()
+    assert len(events) == 1
+    assert events[0]["event_type"] == "reward_hacking_detected"

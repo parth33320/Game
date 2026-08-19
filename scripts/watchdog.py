@@ -11,9 +11,10 @@ from audit.audit_logger import AuditLogger
 
 class ProcessWatchdog:
     """
-    Health check & auto-recovery supervisor service.
-    Monitors active child processes (emulator loop, chat listener, FFmpeg streamer),
-    automatically restarts crashed subprocesses, and logs incidents to the append-only audit trail.
+    24/7 Health Check & Auto-Recovery Supervisor Service.
+    Monitors active background services (PyTorch PPO training agent loop, gameplay runner, FFmpeg streamer),
+    catches segmentation faults, crashes, or unhandled exceptions, automatically restarts child processes,
+    and logs all recovery incidents to the append-only audit trail.
     """
     def __init__(
         self,
@@ -23,8 +24,11 @@ class ProcessWatchdog:
     ):
         self.check_interval = check_interval
         self.audit_logger = audit_logger or AuditLogger()
+        python_exe = sys.executable
         self.managed_services = managed_services or {
-            "gameplay_loop": [sys.executable, "scripts/run_ai_gameplay.py"]
+            "training_agent": [python_exe, "scripts/train_agent.py"],
+            "gameplay_loop": [python_exe, "scripts/run_ai_gameplay.py"],
+            "ffmpeg_streamer": [python_exe, "scripts/stream_gameplay.py"]
         }
         self.processes: Dict[str, subprocess.Popen] = {}
         self.restart_counts: Dict[str, int] = {}
@@ -63,6 +67,7 @@ class ProcessWatchdog:
                     "timestamp": time.time()
                 }
                 self.audit_logger.log_event("watchdog_recovery", incident)
+                print(f"WATCHDOG RECOVERY: Service '{name}' exited with code {exit_code}. Auto-restarting (Attempt {self.restart_counts[name]})...")
                 
                 new_proc = self.start_service(name, cmd)
                 status_report[name] = {
