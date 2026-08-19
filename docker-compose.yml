@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ai_stream_runner
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - STREAM_KEY=${STREAM_KEY:-dummy_key}
+      - RTMP_URL=${RTMP_URL:-rtmp://live.restream.io/live}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/telemetry"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ./audit:/app/audit

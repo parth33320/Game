@@ -1,7 +1,7 @@
 import json
 import time
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 class AuditLogger:
     """
@@ -21,3 +21,17 @@ class AuditLogger:
         with open(self.log_filepath, "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
         return record
+
+    def read_all_events(self) -> List[Dict[str, Any]]:
+        """Reads and returns all logged events from the JSONL file."""
+        if not os.path.exists(self.log_filepath):
+            return []
+        events = []
+        with open(self.log_filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        events.append(json.loads(line))
+                    except Exception:
+                        pass
+        return events
