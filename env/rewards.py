@@ -3,25 +3,30 @@ from typing import Dict, Any
 class RetroRewardEngine:
     """
     Reward shaping engine for NES/Castlevania Gym environment:
-    - Positive rewards for horizontal progression, collecting hearts/score, and surviving.
-    - Heavy penalties for taking damage, losing lives, or getting stuck.
+    - Strict per-step time penalty (-0.02) to force progression.
+    - Exponential progression reward when exceeding maximum horizontal position.
+    - Reduced death penalty to promote exploration over passive waiting.
+    - Secondary rewards for collecting items/score.
     """
     def __init__(
         self,
         progress_weight: float = 1.0,
         heart_weight: float = 0.5,
         score_weight: float = 0.05,
-        damage_penalty: float = -15.0,
-        death_penalty: float = -200.0,
-        stuck_penalty: float = -2.0
+        time_penalty: float = -0.02,
+        damage_penalty: float = -5.0,
+        death_penalty: float = -30.0,
+        stuck_penalty: float = -0.5
     ):
         self.progress_weight = progress_weight
         self.heart_weight = heart_weight
         self.score_weight = score_weight
+        self.time_penalty = time_penalty
         self.damage_penalty = damage_penalty
         self.death_penalty = death_penalty
         self.stuck_penalty = stuck_penalty
 
+        self.max_x = 0.0
         self.last_x = 0.0
         self.last_hearts = 0
         self.last_score = 0
@@ -30,6 +35,7 @@ class RetroRewardEngine:
         self.stuck_counter = 0
 
     def reset(self, info: Dict[str, Any]):
+        self.max_x = float(info.get("x_pos", 0.0))
         self.last_x = float(info.get("x_pos", 0.0))
         self.last_hearts = int(info.get("hearts", 0))
         self.last_score = int(info.get("score", 0))
@@ -46,14 +52,19 @@ class RetroRewardEngine:
 
         reward = 0.0
 
-        # Horizontal progress
-        x_diff = curr_x - self.last_x
-        if x_diff > 0:
-            reward += x_diff * self.progress_weight
+        # Step time penalty to enforce urgency
+        reward += self.time_penalty
+
+        # Progression reward strictly when exceeding max_x with milestone multipliers
+        if curr_x > self.max_x:
+            x_diff = curr_x - self.max_x
+            progress_multiplier = 1.0 + (self.max_x / 100.0)
+            reward += x_diff * self.progress_weight * progress_multiplier
+            self.max_x = curr_x
             self.stuck_counter = 0
         else:
             self.stuck_counter += 1
-            if self.stuck_counter > 50:
+            if self.stuck_counter > 30:
                 reward += self.stuck_penalty
 
         # Item collections (hearts/score)
