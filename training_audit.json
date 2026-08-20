@@ -1,0 +1,21 @@
+{
+  "status": "EARLY_STOPPING",
+  "failure_reason": "REWARD_HACKING",
+  "episode": 2,
+  "total_reward": 927.3400000000023,
+  "max_x_pos": 349.0,
+  "entropy": 2.079131603240967,
+  "active_params": {
+    "initial_lr": 0.00015,
+    "ent_coef": 0.05,
+    "gamma": 0.99,
+    "time_penalty": -0.02,
+    "score_weight": 0.01,
+    "progress_multiplier": 1.0,
+    "penalize_zero_velocity": false,
+    "zero_velocity_penalty": -0.05,
+    "lr_warmup_steps": 0,
+    "reinit_policy_entropy": false
+  },
+  "timestamp": 1787186137.5193913
+}

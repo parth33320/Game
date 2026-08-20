@@ -7,6 +7,7 @@ class PlatformerRewardCalculator:
     - Exponential progression reward when exceeding maximum horizontal position (max_x_pos).
     - Reduced death penalty to encourage exploration over safe timing out.
     - Score and item collection secondary rewards.
+    - Support for auto-tuning adjustments (progress_multiplier, penalize_zero_velocity, etc.).
     """
     def __init__(
         self,
@@ -15,7 +16,10 @@ class PlatformerRewardCalculator:
         time_penalty: float = -0.02,
         life_loss_penalty: float = -25.0,
         damage_penalty: float = -5.0,
-        pit_fall_penalty: float = -35.0
+        pit_fall_penalty: float = -35.0,
+        progress_multiplier: float = 1.0,
+        penalize_zero_velocity: bool = False,
+        zero_velocity_penalty: float = -0.05
     ):
         self.distance_weight = distance_weight
         self.score_weight = score_weight
@@ -23,6 +27,9 @@ class PlatformerRewardCalculator:
         self.life_loss_penalty = life_loss_penalty
         self.damage_penalty = damage_penalty
         self.pit_fall_penalty = pit_fall_penalty
+        self.progress_multiplier = progress_multiplier
+        self.penalize_zero_velocity = penalize_zero_velocity
+        self.zero_velocity_penalty = zero_velocity_penalty
 
         self.max_x_pos = 0.0
         self.last_x_pos = 0.0
@@ -49,17 +56,22 @@ class PlatformerRewardCalculator:
         # Step time penalty to enforce urgency
         reward += self.time_penalty
 
+        # Zero-velocity penalty if enabled and no horizontal displacement
+        if self.penalize_zero_velocity and abs(curr_x - self.last_x_pos) < 0.01:
+            reward += self.zero_velocity_penalty
+
         # Exponential progress reward strictly when exceeding max_x_pos
         if curr_x > self.max_x_pos:
             x_diff = curr_x - self.max_x_pos
-            progress_multiplier = 1.0 + (self.max_x_pos / 100.0)
-            reward += x_diff * self.distance_weight * progress_multiplier
+            prog_mult = (1.0 + (self.max_x_pos / 100.0)) * self.progress_multiplier
+            reward += x_diff * self.distance_weight * prog_mult
             self.max_x_pos = curr_x
 
-        # Score gain
-        score_diff = curr_score - self.last_score
-        if score_diff > 0:
-            reward += score_diff * self.score_weight
+        # Score gain (non-displacement reward)
+        if self.score_weight > 0.0:
+            score_diff = curr_score - self.last_score
+            if score_diff > 0:
+                reward += score_diff * self.score_weight
 
         # Life loss / Death penalty
         if curr_lives < self.last_lives or fell_in_pit:
