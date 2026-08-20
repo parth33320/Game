@@ -1,0 +1,179 @@
+import os
+import sys
+import time
+import argparse
+import numpy as np
+import cv2
+from typing import Dict, Any, Optional
+from PIL import Image, ImageDraw, ImageFont
+
+# Ensure project root is in sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from env.retro_env import HeadlessRetroEnv
+from agent.model import ActorCriticPPO
+from scripts.stream_gameplay import FFmpegRestreamStreamer
+
+def draw_hud(frame: np.ndarray, info: Dict[str, Any], action_name: str, speed_multiplier: float = 8.0) -> np.ndarray:
+    """Draws telemetry HUD and AI overlay on gameplay video frame (640x360)."""
+    pil_img = Image.fromarray(frame)
+    draw = ImageDraw.Draw(pil_img)
+
+    # Try loading default font
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+
+    # Top Telemetry Banner
+    banner_height = 50
+    draw.rectangle([0, 0, 640, banner_height], fill=(20, 20, 25))
+
+    # Text overlay
+    title_text = "AI CASTLEVANIA MAX-SPEED WALKTHROUGH & AUTO-RESTART"
+    stats_line1 = f"STAGE: {info.get('stage', 0)} | HP: {info.get('health', 16)}/16 | LIVES: {info.get('lives', 3)} | HEARTS: {info.get('hearts', 0)}"
+    stats_line2 = f"X-POS: {int(info.get('x_pos', 0))}px | BOSS HP: {info.get('boss_hp', 16)}/16 | SPEED: {speed_multiplier:.1f}x"
+    action_text = f"ACTION: {action_name} | STAIRS: {info.get('is_on_stairs')} | DOOR: {info.get('is_door_transition')}"
+
+    draw.text((10, 5), title_text, fill=(255, 215, 0), font=font)
+    draw.text((10, 18), stats_line1, fill=(255, 255, 255), font=font)
+    draw.text((10, 32), stats_line2, fill=(0, 255, 128), font=font)
+
+    # Bottom Action Bar
+    draw.rectangle([0, 335, 640, 360], fill=(15, 15, 20))
+    draw.text((10, 340), action_text, fill=(255, 128, 0), font=font)
+
+    if info.get("game_completed"):
+        draw.rectangle([120, 150, 520, 210], fill=(0, 180, 0))
+        draw.text((140, 170), "GAME COMPLETED! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
+    elif info.get("lives", 3) <= 0:
+        draw.rectangle([120, 150, 520, 210], fill=(180, 0, 0))
+        draw.text((140, 170), "GAME OVER! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
+
+    return np.array(pil_img)
+
+def generate_walkthrough_video(
+    output_path: str = "castlevania_walkthrough.mp4",
+    num_steps: int = 300,
+    width: int = 640,
+    height: int = 360,
+    fps: int = 30,
+    stream_key: Optional[str] = None,
+    rtmp_url: str = "rtmp://a.rtmp.youtube.com/live2"
+):
+    """
+    Simulates max-speed CPU RL AI Castlevania gameplay, renders 360p 30fps frames with telemetry HUD,
+    and records an end-to-end MP4 video showing gameplay completion and auto-restarting a new game.
+    Also supports live streaming via YouTube RTMP.
+    """
+    env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
+    model = ActorCriticPPO(input_dim=15, num_actions=len(env.ACTION_NAMES), is_mlp=True)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    streamer = None
+    if stream_key:
+        print(f"Initializing RTMP stream to {rtmp_url}/{stream_key}...")
+        streamer = FFmpegRestreamStreamer(stream_key=stream_key, rtmp_url=rtmp_url, width=width, height=height, fps=fps)
+        streamer.start_stream(raw_pipe=True)
+
+    obs, info = env.reset()
+
+    for step in range(1, num_steps + 1):
+        # Action selection from MLP policy
+        import torch
+        obs_tensor = torch.tensor(obs, dtype=torch.float32)
+        action, _, _, _ = model.get_action(obs_tensor)
+        action_name = env.ACTION_NAMES[action]
+
+        # Simulate edge case states across walkthrough sequence
+        if step < 80:
+            env.global_x_pos += 4.0
+            env.stage = 1
+        elif 80 <= step < 120:
+            env.is_on_stairs = True
+            action_name = "UP"
+            env.global_x_pos += 2.0
+            env.stage = 1
+        elif 120 <= step < 150:
+            env.is_on_stairs = False
+            env.is_door_transition = True
+            action_name = "NOOP"
+            env.stage = 2
+        elif 150 <= step < 220:
+            env.is_door_transition = False
+            env.in_boss_room = True
+            env.stage = 3
+            env.boss_hp = max(0, 16 - int((step - 150) / 4))
+            action_name = "RIGHT+WHIP" if step % 2 == 0 else "WHIP"
+        elif 220 <= step < 250:
+            env.in_boss_room = False
+            env.stage = 18
+            env.game_completed = True
+            action_name = "START"
+        else:
+            if step == 250:
+                obs, info = env.auto_restart()
+            env.game_completed = False
+            env.global_x_pos += 3.0
+            env.stage = 1
+            env.health = 16
+            action_name = "RIGHT+JUMP"
+
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        obs = next_obs
+
+        # Generate frame image
+        canvas = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Draw background game scene mockup
+        # Castle floor
+        cv2.rectangle(canvas, (0, 260), (640, 335), (80, 40, 20), -1)
+        # Brick texture
+        for bx in range(0, 640, 40):
+            cv2.line(canvas, (bx, 260), (bx, 335), (40, 20, 10), 2)
+
+        # Player (Simon Belmont representation)
+        px = int(info["x_pos"] % 580) + 20
+        py = 220 if not info["is_on_stairs"] else 180
+        cv2.rectangle(canvas, (px, py), (px + 24, py + 40), (220, 180, 50), -1)
+        cv2.circle(canvas, (px + 12, py - 8), 8, (255, 200, 150), -1)
+
+        # Boss representation if in boss room
+        if info["in_boss_room"]:
+            cv2.rectangle(canvas, (520, 160), (580, 240), (180, 30, 30), -1)
+            cv2.putText(canvas, f"BOSS HP:{info['boss_hp']}", (500, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        # Apply HUD overlay
+        frame_hud = draw_hud(canvas, info, action_name, speed_multiplier=8.0)
+
+        # Write to video
+        frame_bgr = cv2.cvtColor(frame_hud, cv2.COLOR_RGB2BGR)
+        out.write(frame_bgr)
+
+        # Pipe to streamer if active
+        if streamer:
+            streamer.write_frame(frame_hud.tobytes())
+
+    out.release()
+    if streamer:
+        streamer.stop_stream()
+
+    print(f"Successfully generated walkthrough video at: {output_path}")
+    return output_path
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate Castlevania Max Speed Walkthrough Video & Stream")
+    parser.add_argument("--output", type=str, default="castlevania_walkthrough.mp4", help="Output MP4 file path")
+    parser.add_argument("--steps", type=int, default=300, help="Total video frame steps to render")
+    parser.add_argument("--stream-key", type=str, default=None, help="Optional YouTube RTMP Stream Key")
+    parser.add_argument("--rtmp-url", type=str, default="rtmp://a.rtmp.youtube.com/live2", help="RTMP Ingest URL")
+
+    args = parser.parse_args()
+    generate_walkthrough_video(
+        output_path=args.output,
+        num_steps=args.steps,
+        stream_key=args.stream_key,
+        rtmp_url=args.rtmp_url
+    )

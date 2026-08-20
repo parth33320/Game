@@ -2,7 +2,7 @@ import os
 import shutil
 import numpy as np
 from collections import deque
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 from env.rewards import RetroRewardEngine
 
 try:
@@ -47,32 +47,55 @@ class HeadlessRetroEnv:
     """
     Gymnasium-compatible environment wrapper around a headless stable-retro emulator
     using actual Castlevania NES ROM ('Castlevania (USA) (Rev 1).nes').
-    Restricts action space strictly to 8 essential Castlevania actions:
-    0: NOOP, 1: RIGHT, 2: LEFT, 3: DOWN, 4: JUMP, 5: WHIP, 6: RIGHT+JUMP, 7: RIGHT+WHIP.
-    Applies 4-frame stacking giving observation shape (4, 84, 84) and dynamic timeouts (+50 steps per 100px).
-    Includes anti-reward hacking detection for static-position reward exploitation and autonomous auto-restart on completion.
-    """
-    ACTION_NAMES = ["NOOP", "RIGHT", "LEFT", "DOWN", "JUMP", "WHIP", "RIGHT+JUMP", "RIGHT+WHIP"]
 
-    def __init__(self, frame_shape: Tuple[int, int] = (84, 84), num_stack: int = 4, base_max_steps: int = 400, use_retro: bool = True):
+    Supports both 2D image observations and 1D CPU-normalized RAM-vector observations (~15 features).
+    Addresses Castlevania RAM edge cases:
+    1. Staircase Alignment Traps: Restricts action space to UP/DOWN when on stairs ($0020 == 0x08 or 0x0A).
+    2. Transition Door Delays: Freezes environment timer and executes NOOP when door state ($0018 == 0x08) is active.
+    3. Global X-Position: Calculates coarse + fine position (RAM $0041 * 256 + RAM $0040).
+    4. Boss Room Soft-Locks: Dynamically shifts progress reward to Boss HP damage when in boss room.
+    5. Feature Scaling: Normalizes RAM vector elements between 0.0 and 1.0 for CPU MLP training.
+    """
+    ACTION_NAMES = ["NOOP", "RIGHT", "LEFT", "DOWN", "JUMP", "WHIP", "RIGHT+JUMP", "RIGHT+WHIP", "UP"]
+
+    def __init__(
+        self,
+        frame_shape: Tuple[int, int] = (84, 84),
+        num_stack: int = 4,
+        base_max_steps: int = 400,
+        use_retro: bool = True,
+        obs_type: str = "ram"  # "ram" for 1D CPU MLP vector or "pixels" for 2D stacked frame
+    ):
         self.frame_shape = frame_shape
         self.num_stack = num_stack
         self.base_max_steps = base_max_steps
         self.max_episode_steps = base_max_steps
         self.step_count = 0
+        self.obs_type = obs_type
         self.reward_engine = RetroRewardEngine()
 
         self.frame_buffer = deque(maxlen=num_stack)
         self.action_history = deque(maxlen=30)
 
-        self.x_pos = 0.0
+        # Game State Variables
+        self.global_x_pos = 0.0
         self.max_x_pos = 0.0
+        self.fine_x = 0
+        self.coarse_screen = 0
+        self.y_pos = 0
         self.last_milestone = 0
         self.hearts = 0
         self.score = 0
         self.health = 16
         self.lives = 3
         self.stage = 0
+        self.boss_hp = 16
+        self.prev_boss_hp = 16
+        self.in_boss_room = False
+        self.is_on_stairs = False
+        self.is_door_transition = False
+        self.game_state_byte = 0x05
+        self.movement_state_byte = 0x00
         self.game_completed = False
         self.auto_restarted = False
         self.accumulated_reward = 0.0
@@ -95,29 +118,102 @@ class HeadlessRetroEnv:
             "RIGHT":      [0, 0, 0, 0, 0, 0, 0, 1, 0],
             "LEFT":       [0, 0, 0, 0, 0, 0, 1, 0, 0],
             "DOWN":       [0, 0, 0, 0, 0, 1, 0, 0, 0],
+            "UP":         [0, 0, 0, 0, 1, 0, 0, 0, 0],
             "JUMP":       [0, 0, 0, 0, 0, 0, 0, 0, 1], # 'A' is jump
             "WHIP":       [1, 0, 0, 0, 0, 0, 0, 0, 0], # 'B' is whip
             "RIGHT+JUMP": [0, 0, 0, 0, 0, 0, 0, 1, 1],
             "RIGHT+WHIP": [1, 0, 0, 0, 0, 0, 0, 1, 0]
         }
 
+    def _get_ram_vector(self) -> np.ndarray:
+        """
+        Returns a 1D normalized float32 RAM observation vector (~15 features bounded between 0.0 and 1.0)
+        suitable for high-speed CPU Multi-Layer Perceptron (MLP) training.
+        """
+        vector = np.array([
+            min(self.global_x_pos / 10000.0, 1.0),            # Scaled global X position
+            min(self.y_pos / 240.0, 1.0),                     # Scaled Y position
+            min(self.health / 16.0, 1.0),                     # Simon Health (0.0 to 1.0)
+            min(self.lives / 3.0, 1.0),                       # Lives (0.0 to 1.0)
+            min(self.hearts / 99.0, 1.0),                     # Hearts count
+            min(self.boss_hp / 16.0, 1.0),                    # Boss HP (0.0 to 1.0)
+            min(self.stage / 18.0, 1.0),                      # Stage progression
+            1.0 if self.is_on_stairs else 0.0,                # Stairwalking state flag
+            1.0 if self.is_door_transition else 0.0,          # Transition door flag
+            1.0 if self.in_boss_room else 0.0,                # Boss room flag
+            1.0 if self.game_completed else 0.0,              # Game completed flag
+            min(self.coarse_screen / 50.0, 1.0),              # Screen section count
+            min(self.fine_x / 255.0, 1.0),                    # Fine screen X position
+            min(self.game_state_byte / 255.0, 1.0),           # Raw game mode byte
+            min(self.movement_state_byte / 255.0, 1.0)        # Raw movement state byte
+        ], dtype=np.float32)
+        return vector
+
     def _get_stacked_obs(self) -> np.ndarray:
+        if self.obs_type == "ram":
+            return self._get_ram_vector()
         return np.stack(list(self.frame_buffer), axis=0)
 
     def _action_to_buttons(self, act_name: str) -> list:
         return self._button_map.get(act_name, [0] * 9)
 
+    def _read_ram_and_update(self):
+        """Reads RAM addresses directly and applies Castlevania domain logic."""
+        if self.retro_env is not None:
+            try:
+                ram = self.retro_env.get_ram()
+                if ram is not None and len(ram) >= 2048:
+                    self.fine_x = int(ram[0x0040])
+                    self.coarse_screen = int(ram[0x0041])
+                    self.global_x_pos = float(self.coarse_screen * 256 + self.fine_x)
+
+                    self.y_pos = int(ram[0x0038]) if len(ram) > 0x0038 else int(ram[0x0028])
+                    self.lives = int(ram[0x002A])
+                    self.health = int(ram[0x0044])
+                    self.hearts = int(ram[0x0040]) if len(ram) <= 0x0040 else int(ram[0x0042])
+                    self.stage = int(ram[0x0070])
+
+                    # RAM Edge Case 1: Movement State & Stairs ($0020 == 0x08 or 0x0A)
+                    self.movement_state_byte = int(ram[0x0020])
+                    self.is_on_stairs = self.movement_state_byte in (0x08, 0x0A)
+
+                    # RAM Edge Case 2: Door Transition ($0018 == 0x08)
+                    self.game_state_byte = int(ram[0x0018])
+                    self.is_door_transition = (self.game_state_byte == 0x08)
+
+                    # RAM Edge Case 4: Boss HP ($01AA) & Boss Room Detection
+                    if len(ram) > 0x01AA:
+                        self.boss_hp = int(ram[0x01AA])
+                        self.in_boss_room = (self.boss_hp > 0 and self.boss_hp <= 16 and self.stage in (3, 6, 9, 12, 15, 18))
+                    else:
+                        self.boss_hp = 16
+                        self.in_boss_room = False
+
+                    # Game Completion check ($001A == 1 or stage >= 18)
+                    if self.stage >= 18 or ram[0x001A] == 1 or self.game_state_byte == 0x0A:
+                        self.game_completed = True
+            except Exception:
+                pass
+
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         self.step_count = 0
         self.max_episode_steps = self.base_max_steps
-        self.x_pos = 0.0
+        self.global_x_pos = 0.0
         self.max_x_pos = 0.0
+        self.fine_x = 0
+        self.coarse_screen = 0
+        self.y_pos = 0
         self.last_milestone = 0
         self.hearts = 0
         self.score = 0
         self.health = 16
         self.lives = 3
         self.stage = 0
+        self.boss_hp = 16
+        self.prev_boss_hp = 16
+        self.in_boss_room = False
+        self.is_on_stairs = False
+        self.is_door_transition = False
         self.game_completed = False
         self.accumulated_reward = 0.0
         self.reward_hacking_detected = False
@@ -129,7 +225,7 @@ class HeadlessRetroEnv:
         if self.retro_env is not None:
             raw_obs, _ = self.retro_env.reset(seed=seed)
             raw_frame = raw_obs
-            self._update_ram_state()
+            self._read_ram_and_update()
         else:
             raw_frame = np.zeros(self.frame_shape, dtype=np.uint8)
 
@@ -138,13 +234,17 @@ class HeadlessRetroEnv:
             self.frame_buffer.append(processed)
 
         info = {
-            "x_pos": self.x_pos,
+            "x_pos": self.global_x_pos,
             "max_x_pos": self.max_x_pos,
             "hearts": self.hearts,
             "score": self.score,
             "health": self.health,
             "lives": self.lives,
             "stage": self.stage,
+            "boss_hp": self.boss_hp,
+            "in_boss_room": self.in_boss_room,
+            "is_on_stairs": self.is_on_stairs,
+            "is_door_transition": self.is_door_transition,
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "reward_hacking_detected": False,
@@ -153,27 +253,6 @@ class HeadlessRetroEnv:
         self.reward_engine.reset(info)
 
         return self._get_stacked_obs(), info
-
-    def _update_ram_state(self):
-        """Reads real RAM from the retro emulator instance if available."""
-        if self.retro_env is None:
-            return
-        try:
-            ram = self.retro_env.get_ram()
-            if ram is not None and len(ram) >= 2048:
-                player_x = int(ram[0x0026])
-                screen_x = int(ram[0x0028])
-                raw_x = float(screen_x * 256 + player_x)
-                if raw_x > self.x_pos or self.step_count == 0:
-                    self.x_pos = raw_x
-                self.lives = int(ram[0x002A])
-                self.health = int(ram[0x0044])
-                self.hearts = int(ram[0x0040])
-                self.stage = int(ram[0x0070])
-                if self.stage >= 18 or ram[0x001A] == 1:
-                    self.game_completed = True
-        except Exception:
-            pass
 
     def auto_restart(self) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -190,38 +269,44 @@ class HeadlessRetroEnv:
         return self.reset()
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        self.step_count += 1
         act = action if (0 <= action < len(self.ACTION_NAMES)) else 0
         act_name = self.ACTION_NAMES[act]
+
+        # RAM Edge Case 1: Staircase alignment trap -> Restrict actions to UP/DOWN on stairs
+        if self.is_on_stairs and act_name not in ("UP", "DOWN"):
+            act_name = "UP" if act % 2 == 0 else "DOWN"
+
+        # RAM Edge Case 2: Transition door delay -> Issue NOOP action and pause step count/penalties
+        if self.is_door_transition:
+            act_name = "NOOP"
+        else:
+            self.step_count += 1
+
         self.action_history.append(act_name)
 
         if self.retro_env is not None:
             btn_arr = self._action_to_buttons(act_name)
             raw_obs, retro_reward, retro_term, retro_trunc, retro_info = self.retro_env.step(btn_arr)
             new_frame = _process_frame(raw_obs, shape=self.frame_shape)
-            self._update_ram_state()
+            self._read_ram_and_update()
             if "score" in retro_info:
                 self.score = retro_info["score"]
         else:
-            if act_name == "RIGHT":
-                self.x_pos += 1.5
-                self.score += 5
-            elif act_name == "LEFT":
-                self.x_pos = max(0.0, self.x_pos - 0.5)
-            elif act_name == "WHIP":
-                self.score += 20
-                self.hearts += 1
-            elif act_name == "RIGHT+JUMP":
-                self.x_pos += 2.5
-                self.score += 5
-            elif act_name == "RIGHT+WHIP":
-                self.x_pos += 2.0
-                self.score += 15
+            # Fallback simulated progression for environments without NES ROM binaries
+            if not self.is_door_transition:
+                if act_name in ("RIGHT", "RIGHT+JUMP", "RIGHT+WHIP"):
+                    self.global_x_pos += 2.0
+                    self.score += 5
+                elif act_name == "LEFT":
+                    self.global_x_pos = max(0.0, self.global_x_pos - 0.5)
+                elif act_name == "WHIP":
+                    self.score += 20
+                    self.hearts += 1
 
             new_frame = np.random.randint(0, 256, size=self.frame_shape, dtype=np.uint8)
 
-        if self.x_pos > self.max_x_pos:
-            self.max_x_pos = self.x_pos
+        if self.global_x_pos > self.max_x_pos:
+            self.max_x_pos = self.global_x_pos
 
         # Dynamic timeout extensions (+50 steps per 100 pixels)
         current_milestone = int(self.max_x_pos // 100)
@@ -231,25 +316,37 @@ class HeadlessRetroEnv:
             self.last_milestone = current_milestone
 
         info = {
-            "x_pos": self.x_pos,
+            "x_pos": self.global_x_pos,
             "max_x_pos": self.max_x_pos,
             "hearts": self.hearts,
             "score": self.score,
             "health": self.health,
             "lives": self.lives,
             "stage": self.stage,
+            "boss_hp": self.boss_hp,
+            "in_boss_room": self.in_boss_room,
+            "is_on_stairs": self.is_on_stairs,
+            "is_door_transition": self.is_door_transition,
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "max_steps": self.max_episode_steps
         }
 
+        # Calculate reward (with Boss Room damage shift edge case handled in reward engine)
         reward = self.reward_engine.calculate_reward(info)
+
+        # RAM Edge Case 4: Boss damage extra reward boost
+        if self.in_boss_room and self.boss_hp < self.prev_boss_hp:
+            boss_damage = self.prev_boss_hp - self.boss_hp
+            reward += boss_damage * 5.0
+
+        self.prev_boss_hp = self.boss_hp
         self.accumulated_reward += reward
 
         # Anti-Reward Hacking & Stagnation Check
         repetitive_loop = (len(self.action_history) == 30 and
                            all(a == "WHIP" for a in self.action_history) and
-                           self.x_pos < 10.0)
+                           self.global_x_pos < 10.0)
         static_reward_hack = (self.accumulated_reward > 50.0 and self.max_x_pos < 10.0)
 
         if repetitive_loop or static_reward_hack:
@@ -257,7 +354,7 @@ class HeadlessRetroEnv:
 
         info["reward_hacking_detected"] = self.reward_hacking_detected
 
-        terminated = self.lives <= 0 or self.game_completed
+        terminated = self.lives <= 0 or self.game_completed or self.game_state_byte == 0x07
         truncated = self.step_count >= self.max_episode_steps
 
         # Auto restart if game over or game completed
