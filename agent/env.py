@@ -22,16 +22,25 @@ class MockPlatformerEnv:
         7: "RIGHT+WHIP"
     }
 
-    def __init__(self, frame_shape: Tuple[int, int] = (84, 84), num_stack: int = 4, base_max_steps: int = 400):
+    def __init__(
+        self,
+        frame_shape: Tuple[int, int] = (84, 84),
+        num_stack: int = 4,
+        base_max_steps: int = 400,
+        reward_calculator_params: Optional[Dict[str, Any]] = None
+    ):
         self.frame_shape = frame_shape
         self.num_stack = num_stack
         self.base_max_steps = base_max_steps
         self.max_steps = base_max_steps
         self.current_step = 0
-        self.reward_calculator = PlatformerRewardCalculator()
+
+        rc_params = reward_calculator_params or {}
+        self.reward_calculator = PlatformerRewardCalculator(**rc_params)
 
         self.frame_buffer = deque(maxlen=num_stack)
         self.action_history = deque(maxlen=30)
+        self.episode_action_history = []
 
         self.x_pos = 0.0
         self.max_x_pos = 0.0
@@ -42,7 +51,7 @@ class MockPlatformerEnv:
         self.accumulated_reward = 0.0
         self.reward_hacking_detected = False
 
-    def _get_single_frame() -> np.ndarray:
+    def _get_single_frame(self) -> np.ndarray:
         return np.random.uniform(0.0, 1.0, size=self.frame_shape).astype(np.float32)
 
     def _get_stacked_obs(self) -> np.ndarray:
@@ -61,6 +70,7 @@ class MockPlatformerEnv:
         self.reward_hacking_detected = False
 
         self.action_history.clear()
+        self.episode_action_history.clear()
         self.frame_buffer.clear()
 
         # Initialize 4 stacked frames
@@ -76,7 +86,8 @@ class MockPlatformerEnv:
             "health": self.health,
             "fell_in_pit": False,
             "reward_hacking_detected": False,
-            "max_steps": self.max_steps
+            "max_steps": self.max_steps,
+            "repetitive_action_ratio": 0.0
         }
         self.reward_calculator.reset(initial_info)
 
@@ -86,6 +97,7 @@ class MockPlatformerEnv:
         self.current_step += 1
         action_name = self.ACTION_MAP.get(action, "NOOP")
         self.action_history.append(action_name)
+        self.episode_action_history.append(action_name)
 
         # Simulate physics & movement
         if action_name == "RIGHT":
@@ -133,17 +145,22 @@ class MockPlatformerEnv:
         reward = self.reward_calculator.calculate_reward(state_info)
         self.accumulated_reward += reward
 
-        # Anti-Reward Hacking & Stagnation Detection:
-        # If agent is accumulating positive reward while static, or performing repetitive stationary actions (e.g., WHIP repeatedly in place)
+        # Calculate repetitive action ratio (stationary/attack actions e.g. WHIP, NOOP, DOWN without moving)
+        non_moving_actions = sum(1 for a in self.episode_action_history if a in ("WHIP", "NOOP", "DOWN"))
+        repetitive_ratio = non_moving_actions / len(self.episode_action_history) if self.episode_action_history else 0.0
+
+        # Anti-Reward Hacking & Stagnation Detection
         repetitive_loop = (len(self.action_history) == 30 and
                            all(a == "WHIP" for a in self.action_history) and
                            self.x_pos < 10.0)
         static_reward_hack = (self.accumulated_reward > 50.0 and self.max_x_pos < 10.0)
+        high_repetitive_ratio = (len(self.episode_action_history) >= 20 and repetitive_ratio > 0.40 and self.max_x_pos < 10.0)
 
-        if repetitive_loop or static_reward_hack:
+        if repetitive_loop or static_reward_hack or high_repetitive_ratio:
             self.reward_hacking_detected = True
 
         state_info["reward_hacking_detected"] = self.reward_hacking_detected
+        state_info["repetitive_action_ratio"] = repetitive_ratio
 
         terminated = self.lives <= 0 or fell_in_pit
         truncated = self.current_step >= self.max_steps

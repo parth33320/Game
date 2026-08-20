@@ -1,0 +1,12 @@
+{
+  "initial_lr": 0.00015,
+  "ent_coef": 0.05,
+  "gamma": 0.99,
+  "time_penalty": -0.05,
+  "score_weight": 0.0,
+  "progress_multiplier": 1.0,
+  "penalize_zero_velocity": true,
+  "zero_velocity_penalty": -0.05,
+  "lr_warmup_steps": 0,
+  "reinit_policy_entropy": false
+}
