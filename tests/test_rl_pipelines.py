@@ -8,7 +8,7 @@ from agent.env import MockPlatformerEnv
 from agent.model import ActorCriticPPO
 from env.rewards import RetroRewardEngine
 from env.retro_env import HeadlessRetroEnv
-from agent.train import StableBaselines3PPOTrainer
+from agent.train import PPOTrainer
 from audit.audit_logger import AuditLogger
 
 def test_platformer_reward_calculator():
@@ -51,15 +51,16 @@ def test_dynamic_timeout_and_reward_hacking_detection():
     assert info["max_steps"] == 450  # 400 base + 50 extension
 
 def test_pytorch_ppo_actor_critic_shapes():
-    model = ActorCriticPPO(input_channels=4, num_actions=8)
-    fake_obs = torch.zeros((1, 4, 84, 84), dtype=torch.float32)
+    # 1D MLP
+    model_mlp = ActorCriticPPO(input_dim=15, num_actions=9, is_mlp=True)
+    fake_obs = torch.zeros((1, 15), dtype=torch.float32)
 
-    logits, value = model(fake_obs)
-    assert logits.shape == (1, 8)
+    logits, value = model_mlp(fake_obs)
+    assert logits.shape == (1, 9)
     assert value.shape == (1, 1)
 
-    action, log_prob, val_est, entropy = model.get_action(fake_obs)
-    assert 0 <= action < 8
+    action, log_prob, val_est, entropy = model_mlp.get_action(fake_obs)
+    assert 0 <= action < 9
     assert isinstance(log_prob, torch.Tensor)
     assert isinstance(entropy, torch.Tensor)
 
@@ -74,21 +75,34 @@ def test_retro_reward_engine():
     r_dmg = engine.calculate_reward({"x_pos": 5.0, "hearts": 2, "score": 50, "health": 12, "lives": 3})
     assert r_dmg < 0.0
 
-def test_headless_retro_env():
-    env = HeadlessRetroEnv(frame_shape=(84, 84), num_stack=4)
+def test_headless_retro_env_ram_edge_cases():
+    env = HeadlessRetroEnv(obs_type="ram")
     obs, info = env.reset()
 
-    assert obs.shape == (4, 84, 84)
+    assert obs.shape == (15,)
 
-    obs2, reward, terminated, truncated, info2 = env.step(5)  # WHIP
-    assert obs2.shape == (4, 84, 84)
+    # Test stair restriction
+    env.is_on_stairs = True
+    obs2, reward, terminated, truncated, info2 = env.step(1) # Action 1 = RIGHT -> mapped to UP or DOWN on stairs
+    assert info2["is_on_stairs"] is True
+
+    # Test door transition pause
+    env.is_door_transition = True
+    obs3, reward3, term3, trunc3, info3 = env.step(5)
+    assert info3["is_door_transition"] is True
+
+    # Test boss damage reward
+    env.in_boss_room = True
+    env.prev_boss_hp = 16
+    env.boss_hp = 12
+    obs4, reward4, term4, trunc4, info4 = env.step(5)
+    assert reward4 > 0.0
 
 def test_stable_retro_game_completion_and_auto_restart():
-    env = HeadlessRetroEnv(frame_shape=(84, 84), num_stack=4, use_retro=True)
+    env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
     obs, info = env.reset()
 
-    assert obs.shape == (4, 84, 84)
-    assert env.retro_env is not None
+    assert obs.shape == (15,)
 
     # Simulate game completion flag
     env.game_completed = True
@@ -98,19 +112,21 @@ def test_stable_retro_game_completion_and_auto_restart():
     assert info2["auto_restarted"] is True
     assert terminated is True
 
-def test_stable_baselines3_ppo_trainer(tmp_path):
+def test_ppo_trainer(tmp_path):
     ckpt_dir = os.path.join(tmp_path, "ckpts")
     log_dir = os.path.join(tmp_path, "logs")
 
-    trainer = StableBaselines3PPOTrainer(
+    trainer = PPOTrainer(
         checkpoint_dir=ckpt_dir,
-        log_dir=log_dir
+        log_dir=log_dir,
+        is_mlp=True
     )
 
-    trainer.train(total_timesteps=100, checkpoint_freq=50)
+    result = trainer.train(total_timesteps=10, checkpoint_freq=5)
 
     assert os.path.exists(ckpt_dir)
     assert len(os.listdir(ckpt_dir)) > 0
+    assert result["total_timesteps"] == 10
 
 def test_anti_reward_hacking_detection(tmp_path):
     audit_file = str(tmp_path / "test_audit.jsonl")

@@ -6,6 +6,13 @@ class RAMScraper:
     Interfaces with emulator API or memory state to extract real-time gameplay flags
     (text box state, active menu options, player coordinates, battle stats, game-over/title screen states, stage completion)
     without vision models. Includes automated menu recovery logic to auto-restart on game over or game completion.
+
+    Supports Castlevania RAM Edge Cases:
+    1. Global X-Position Calculation: coarse_screen ($0041) * 256 + fine_x ($0040).
+    2. Staircase Alignment Detection: movement state ($0020) in (0x08, 0x0A).
+    3. Transition Door Delays: game state ($0018) == 0x08.
+    4. Boss Room Detection & HP ($01AA).
+    5. Feature Scaling: Bounded 1D normalized float array (~15 values).
     """
     def __init__(self, memory_backend: Optional[Dict[str, Any]] = None, retro_env: Optional[Any] = None):
         self.memory_backend = memory_backend or {}
@@ -18,23 +25,45 @@ class RAMScraper:
             try:
                 ram = self.retro_env.get_ram()
                 if ram is not None and len(ram) >= 2048:
+                    fine_x = int(ram[0x0040])
+                    coarse_screen = int(ram[0x0041])
+                    global_x = float(coarse_screen * 256 + fine_x)
+
+                    player_y = int(ram[0x0038]) if len(ram) > 0x0038 else int(ram[0x0028])
                     lives = int(ram[0x002A])
                     health = int(ram[0x0044])
-                    player_x = int(ram[0x0026])
-                    player_y = int(ram[0x0028])
+                    hearts = int(ram[0x0042]) if len(ram) > 0x0042 else int(ram[0x0040])
                     stage = int(ram[0x0070])
-                    is_game_over = lives == 0 or bool(ram[0x0100])
-                    is_title_screen = bool(ram[0x0101])
+
+                    movement_state = int(ram[0x0020])
+                    is_on_stairs = movement_state in (0x08, 0x0A)
+
+                    game_state = int(ram[0x0018])
+                    is_door_transition = (game_state == 0x08)
+                    is_game_over = (game_state == 0x07) or lives == 0 or bool(ram[0x0100])
+                    is_title_screen = (game_state == 0x00) or bool(ram[0x0101])
                     is_dead = health == 0 or bool(ram[0x0102])
-                    is_completed = stage >= 18 or bool(ram[0x001A])
+                    is_completed = stage >= 18 or bool(ram[0x001A]) or (game_state == 0x0A)
+
+                    boss_hp = int(ram[0x01AA]) if len(ram) > 0x01AA else 16
+                    in_boss_room = (boss_hp > 0 and boss_hp <= 16 and stage in (3, 6, 9, 12, 15, 18))
 
                     return {
                         "text_box_open": False,
                         "active_menu_options": [],
-                        "player_coords": {"x": player_x, "y": player_y},
+                        "player_coords": {"x": global_x, "y": player_y},
+                        "coarse_screen": coarse_screen,
+                        "fine_x": fine_x,
                         "lives": lives,
                         "health": health,
+                        "hearts": hearts,
                         "stage": stage,
+                        "boss_hp": boss_hp,
+                        "in_boss_room": in_boss_room,
+                        "is_on_stairs": is_on_stairs,
+                        "is_door_transition": is_door_transition,
+                        "game_state_byte": game_state,
+                        "movement_state_byte": movement_state,
                         "is_battle": False,
                         "is_game_over": is_game_over,
                         "is_title_screen": is_title_screen,
@@ -70,6 +99,9 @@ class RAMScraper:
             "is_title_screen": is_title_screen,
             "is_dead": is_dead,
             "is_completed": is_completed,
+            "is_on_stairs": False,
+            "is_door_transition": False,
+            "in_boss_room": False,
             "opponent_stats": {
                 "hp": opponent_hp,
                 "max_hp": opponent_max_hp,

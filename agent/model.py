@@ -7,49 +7,58 @@ import os
 class ActorCriticPPO(nn.Module):
     """
     PyTorch PPO (Proximal Policy Optimization) Actor-Critic architecture.
-    Processes state input tensors (4-frame stacked observations: [B, 4, 84, 84])
-    and outputs policy action logits for 8 masked discrete actions & value estimates.
+    Supports both:
+    1. 1D CPU MLP vector input (e.g. ~15 normalized RAM state features) -> 2-layer hidden MLP ([128, 128] units).
+    2. 2D Stacked Frame Conv input (4-frame stacked observations: [B, 4, 84, 84]).
     Includes transfer learning weight loading adaptation to seamlessly resume from previous checkpoints.
     """
-    def __init__(self, input_channels: int = 4, num_actions: int = 8):
+    def __init__(self, input_dim: int = 15, num_actions: int = 9, is_mlp: bool = True):
         super(ActorCriticPPO, self).__init__()
 
-        self.input_channels = input_channels
+        self.is_mlp = is_mlp
         self.num_actions = num_actions
 
-        # Feature extractor network
-        self.conv = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten()
-        )
-
-        # Linear projection assuming 84x84 input frame
-        self.fc = nn.Sequential(
-            nn.Linear(64 * 7 * 7, 512),
-            nn.ReLU()
-        )
+        if self.is_mlp:
+            # High-speed CPU 2-layer Multi-Layer Perceptron (MLP)
+            self.feature_extractor = nn.Sequential(
+                nn.Linear(input_dim, 128),
+                nn.ReLU(),
+                nn.Linear(128, 128),
+                nn.ReLU()
+            )
+            feature_dim = 128
+        else:
+            # Feature extractor network for 2D stacked frame pixels
+            self.feature_extractor = nn.Sequential(
+                nn.Conv2d(input_dim, 32, kernel_size=8, stride=4),
+                nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=3, stride=1),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(64 * 7 * 7, 512),
+                nn.ReLU()
+            )
+            feature_dim = 512
 
         # Policy head (Actor)
-        self.actor = nn.Linear(512, num_actions)
+        self.actor = nn.Linear(feature_dim, num_actions)
 
         # Value head (Critic)
-        self.critic = nn.Linear(512, 1)
+        self.critic = nn.Linear(feature_dim, 1)
 
     def forward(self, state: torch.Tensor):
-        # Expect state shape [B, C, H, W]
-        if state.dim() == 3:
-            state = state.unsqueeze(0)
+        if not self.is_mlp:
+            if state.dim() == 3:
+                state = state.unsqueeze(0)
+        else:
+            if state.dim() == 1:
+                state = state.unsqueeze(0)
 
-        features = self.conv(state)
-        hidden = self.fc(features)
-
-        logits = self.actor(hidden)
-        value = self.critic(hidden)
+        features = self.feature_extractor(state)
+        logits = self.actor(features)
+        value = self.critic(features)
 
         return logits, value
 
@@ -91,28 +100,18 @@ class ActorCriticPPO(nn.Module):
                 if target_shape == source_shape:
                     adapted_dict[k] = v
                 else:
-                    # Transfer learning adaptation for Conv1 (channel mismatch: e.g. 1 -> 4)
-                    if k == "conv.0.weight" and target_shape[1] != source_shape[1]:
+                    # Transfer learning adaptation
+                    if k.endswith("weight") and len(target_shape) == 2 and len(source_shape) == 2:
                         new_weight = torch.zeros(target_shape, dtype=v.dtype)
+                        r_copy = min(target_shape[0], source_shape[0])
                         c_copy = min(target_shape[1], source_shape[1])
-                        new_weight[:, :c_copy, :, :] = v[:, :c_copy, :, :]
-                        # Repeat weights across stacked channels if target > source
-                        for c in range(c_copy, target_shape[1]):
-                            new_weight[:, c, :, :] = v[:, 0, :, :]
+                        new_weight[:r_copy, :c_copy] = v[:r_copy, :c_copy]
                         adapted_dict[k] = new_weight
-                    # Transfer learning adaptation for Actor output logits (action mismatch: e.g. 6 -> 8)
-                    elif k == "actor.weight" and target_shape[0] != source_shape[0]:
-                        new_weight = torch.zeros(target_shape, dtype=v.dtype)
-                        n_copy = min(target_shape[0], source_shape[0])
-                        new_weight[:n_copy, :] = v[:n_copy, :]
-                        adapted_dict[k] = new_weight
-                    elif k == "actor.bias" and target_shape[0] != source_shape[0]:
+                    elif k.endswith("bias") and len(target_shape) == 1 and len(source_shape) == 1:
                         new_bias = torch.zeros(target_shape, dtype=v.dtype)
                         n_copy = min(target_shape[0], source_shape[0])
                         new_bias[:n_copy] = v[:n_copy]
                         adapted_dict[k] = new_bias
-                    else:
-                        print(f"Skipping key {k} due to unhandled shape difference: {source_shape} vs {target_shape}")
 
         model_dict.update(adapted_dict)
         self.load_state_dict(model_dict)
