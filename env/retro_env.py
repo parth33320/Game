@@ -7,18 +7,27 @@ from env.rewards import RetroRewardEngine
 
 try:
     import stable_retro
+    HAS_STABLE_RETRO = True
+except ImportError:
+    HAS_STABLE_RETRO = False
+
+
+def _ensure_rom_imported():
+    if not HAS_STABLE_RETRO:
+        return
     rom_source = "roms/Castlevania (USA) (Rev 1).nes"
     if os.path.exists(rom_source):
         try:
-            target_dir = os.path.dirname(stable_retro.data.get_file_path("Castlevania-Nes-v0", "rom.sha"))
+            sha_path = stable_retro.data.get_file_path("Castlevania-Nes-v0", "rom.sha")
+            target_dir = os.path.dirname(sha_path)
             target_rom = os.path.join(target_dir, "rom.nes")
             if not os.path.exists(target_rom):
                 shutil.copy(rom_source, target_rom)
         except Exception:
             pass
-    HAS_STABLE_RETRO = True
-except ImportError:
-    HAS_STABLE_RETRO = False
+
+
+_ensure_rom_imported()
 
 
 def _process_frame(frame: np.ndarray, shape: Tuple[int, int] = (84, 84)) -> np.ndarray:
@@ -82,6 +91,7 @@ class HeadlessRetroEnv:
         self.use_retro = use_retro and HAS_STABLE_RETRO
 
         if self.use_retro:
+            _ensure_rom_imported()
             try:
                 self.retro_env = stable_retro.make(game="Castlevania-Nes-v0", render_mode=None)
             except Exception as e:
