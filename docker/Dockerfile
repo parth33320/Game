@@ -15,7 +15,10 @@ RUN pip install --no-cache-dir --prefix=/install \
     pytest \
     torch \
     numpy \
-    gymnasium
+    gymnasium \
+    stable-retro \
+    Pillow \
+    opencv-python-headless
 
 # Stage 2: Final Production Stage
 FROM python:3.10-slim AS final
