@@ -10,6 +10,7 @@ from chat.chat_listener import RestreamChatListener
 from audit.audit_logger import AuditLogger
 from scripts.run_ai_gameplay import GameplayAutomationLoop
 from scripts.stream_gameplay import FFmpegRestreamStreamer
+from env.retro_env import HeadlessRetroEnv
 
 def test_ram_scraper_read_and_speed():
     memory = {
@@ -35,6 +36,22 @@ def test_ram_scraper_read_and_speed():
     assert scraper.get_speed() == 1.0
     scraper.set_speed(8.0)
     assert scraper.get_speed() == 8.0
+
+def test_ram_scraper_auto_restart_sequence():
+    memory = {"0x0100": 1} # game over
+    scraper = RAMScraper(memory_backend=memory)
+    seq = scraper.auto_recover_menu_sequence()
+    assert seq == ["START", "A", "START"]
+    assert memory["0x0100"] == 0
+
+    # Test auto recover on game completion with retro_env
+    env = HeadlessRetroEnv(use_retro=True)
+    env.reset()
+    scraper_retro = RAMScraper(retro_env=env.retro_env)
+    memory_retro = {"0x0103": 1} # game completion
+    scraper_retro.memory_backend = memory_retro
+    seq_retro = scraper_retro.auto_recover_menu_sequence()
+    assert seq_retro == ["START", "A", "START"]
 
 def test_llm_player_prompt_and_parser():
     player = LLMPlayer(persona="comedic hero")
