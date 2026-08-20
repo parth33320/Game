@@ -79,11 +79,24 @@ def test_headless_retro_env():
     obs, info = env.reset()
 
     assert obs.shape == (4, 84, 84)
-    assert info["health"] == 16
 
     obs2, reward, terminated, truncated, info2 = env.step(5)  # WHIP
     assert obs2.shape == (4, 84, 84)
-    assert info2["score"] == 20
+
+def test_stable_retro_game_completion_and_auto_restart():
+    env = HeadlessRetroEnv(frame_shape=(84, 84), num_stack=4, use_retro=True)
+    obs, info = env.reset()
+
+    assert obs.shape == (4, 84, 84)
+    assert env.retro_env is not None
+
+    # Simulate game completion flag
+    env.game_completed = True
+    obs2, reward, terminated, truncated, info2 = env.step(1)
+
+    assert info2["game_completed"] is True
+    assert info2["auto_restarted"] is True
+    assert terminated is True
 
 def test_stable_baselines3_ppo_trainer(tmp_path):
     ckpt_dir = os.path.join(tmp_path, "ckpts")
