@@ -76,7 +76,7 @@ def test_retro_reward_engine():
     assert r_dmg < 0.0
 
 def test_headless_retro_env_ram_edge_cases():
-    env = HeadlessRetroEnv(obs_type="ram")
+    env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
     obs, info = env.reset()
 
     assert obs.shape == (15,)
