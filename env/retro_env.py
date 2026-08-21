@@ -272,12 +272,24 @@ class HeadlessRetroEnv:
         act = action if (0 <= action < len(self.ACTION_NAMES)) else 0
         act_name = self.ACTION_NAMES[act]
 
+        # System State Override 1: Loading transition (0x03) or stage clear scoring screen (0x0C)
+        # Freeze learning steps and return 0.0 reward to avoid policy gradient noise
+        if self.game_state_byte in (0x03, 0x0C):
+            act_name = "NOOP"
+
+        # System State Override 2: Game over (0x07) or title/menu screen -> pulse START to restart
+        elif self.game_state_byte == 0x07 or self.lives <= 0:
+            act_name = "NOOP"
+            # Auto press START logic to move past Title or Game Over Continue screen
+            if self.step_count % 10 < 5:
+                act_name = "NOOP"
+
         # RAM Edge Case 1: Staircase alignment trap -> Restrict actions to UP/DOWN on stairs
-        if self.is_on_stairs and act_name not in ("UP", "DOWN"):
+        elif self.is_on_stairs and act_name not in ("UP", "DOWN"):
             act_name = "UP" if act % 2 == 0 else "DOWN"
 
         # RAM Edge Case 2: Transition door delay -> Issue NOOP action and pause step count/penalties
-        if self.is_door_transition:
+        elif self.is_door_transition:
             act_name = "NOOP"
         else:
             self.step_count += 1
@@ -293,7 +305,7 @@ class HeadlessRetroEnv:
                 self.score = retro_info["score"]
         else:
             # Fallback simulated progression for environments without NES ROM binaries
-            if not self.is_door_transition:
+            if not self.is_door_transition and self.game_state_byte not in (0x03, 0x0C):
                 if act_name in ("RIGHT", "RIGHT+JUMP", "RIGHT+WHIP"):
                     self.global_x_pos += 2.0
                     self.score += 5
@@ -329,16 +341,21 @@ class HeadlessRetroEnv:
             "is_door_transition": self.is_door_transition,
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
+            "game_state_byte": self.game_state_byte,
             "max_steps": self.max_episode_steps
         }
 
-        # Calculate reward (with Boss Room damage shift edge case handled in reward engine)
-        reward = self.reward_engine.calculate_reward(info)
+        # System State 0x03 (Transition) or 0x0C (Scoring screen) -> Freeze learning reward to 0.0
+        if self.game_state_byte in (0x03, 0x0C):
+            reward = 0.0
+        else:
+            # Calculate reward (with Boss Room damage shift edge case handled in reward engine)
+            reward = self.reward_engine.calculate_reward(info)
 
-        # RAM Edge Case 4: Boss damage extra reward boost
-        if self.in_boss_room and self.boss_hp < self.prev_boss_hp:
-            boss_damage = self.prev_boss_hp - self.boss_hp
-            reward += boss_damage * 5.0
+            # RAM Edge Case 4: Boss damage extra reward boost
+            if self.in_boss_room and self.boss_hp < self.prev_boss_hp:
+                boss_damage = self.prev_boss_hp - self.boss_hp
+                reward += boss_damage * 5.0
 
         self.prev_boss_hp = self.boss_hp
         self.accumulated_reward += reward
