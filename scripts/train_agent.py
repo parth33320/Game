@@ -242,6 +242,10 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
     lr_floor = float(active_params.get("lr_floor", 3e-5))
     ent_coef = min(max(0.0, float(active_params.get("ent_coef", 0.05))),
                    max(0.0, float(active_params.get("max_ent_coef", 0.08))))
+    max_ent_coef = max(0.0, float(active_params.get("max_ent_coef", ent_coef)))
+    exploration_ramp_batches = max(0, int(active_params.get("exploration_ramp_batches", 50)))
+    exploration_entropy_step = max(0.0, float(active_params.get("exploration_entropy_step", 0.01)))
+    current_ent_coef = ent_coef
     gamma = float(active_params.get("gamma", 0.99))
     total_episodes = int(active_params.get("total_episodes", 100000))
     checkpoint_interval = int(active_params.get("checkpoint_interval", 25))
@@ -339,7 +343,7 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
                 policy_loss = -torch.minimum(ratios * advantages, clipped_ratios * advantages).mean()
                 loss = (policy_loss
                     + 0.5 * (returns_tensor - values.squeeze(-1)).pow(2).mean()
-                    - ent_coef * distribution.entropy().mean())
+                    - current_ent_coef * distribution.entropy().mean())
                 if not torch.isfinite(loss):
                     trigger_early_stopping(
                         "INVALID_UPDATE",
@@ -438,9 +442,16 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
                 best_policy_state = {key: value.detach().clone() for key, value in model.state_dict().items()}
                 best_policy_optimizer_state = copy.deepcopy(optimizer.state_dict())
                 batches_without_improvement = 0
+                current_ent_coef = ent_coef
                 save_training_checkpoint(os.path.join(checkpoint_dir, "best_ppo_agent_dist.pt"), episode, batch_max, model, optimizer, best_info)
             else:
                 batches_without_improvement += 1
+                if batches_without_improvement >= exploration_ramp_batches:
+                    ramp_batches = batches_without_improvement - exploration_ramp_batches + 1
+                    current_ent_coef = min(
+                        ent_coef + ramp_batches * exploration_entropy_step,
+                        max_ent_coef,
+                    )
             state_dir = active_params.get("savestate_dir", os.path.join(checkpoint_dir, "savestates"))
             os.makedirs(state_dir, exist_ok=True)
             for phase, state in best_milestone_states.items():
@@ -452,7 +463,8 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
                 model.load_state_dict(best_policy_state)
                 optimizer.load_state_dict(best_policy_optimizer_state)
                 batches_without_improvement = 0
-                print(f"Recovered best policy after {recovery_window} batches without a new distance record")
+                current_ent_coef = ent_coef
+                print(f"Recovered best policy after {recovery_window} batches without a new distance record; entropy reset to {current_ent_coef:.4f}")
             if episode % checkpoint_interval == 0 or batch_start == start_episode:
                 save_training_checkpoint(os.path.join(checkpoint_dir, "model_weights_latest.pt"), episode, batch_max, model, optimizer, best_info)
 
@@ -471,15 +483,18 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
                 evaluation_metrics = {
                     "episode": episode,
                     "runs": worker_count,
+                    "curriculum_phase": int(active_params.get("curriculum_phase", 0)),
+                    "savestate_loaded_runs": sum(bool(item[6].get("savestate_loaded", False)) for item in evaluation),
                     "mean_distance": statistics.mean(evaluation_distances),
                     "median_distance": statistics.median(evaluation_distances),
                     "best_distance": max(evaluation_distances),
                     "mean_stage": statistics.mean(evaluation_stages),
+                    "mean_max_stage": statistics.mean(int(item[6].get("max_stage", 0)) for item in evaluation),
                     "completion_rate": evaluation_reasons.count("game_completed") / worker_count,
                     "termination_counts": {reason: evaluation_reasons.count(reason) for reason in set(evaluation_reasons)},
                 }
                 audit_logger.log_event("policy_evaluation", evaluation_metrics)
-                print(f"Evaluation episode {episode}: mean={evaluation_metrics['mean_distance']:.1f} | stage={evaluation_metrics['mean_stage']:.1f} | completion={evaluation_metrics['completion_rate']:.0%}")
+                print(f"Evaluation episode {episode}: phase={evaluation_metrics['curriculum_phase']} | savestates={evaluation_metrics['savestate_loaded_runs']}/{worker_count} | mean={evaluation_metrics['mean_distance']:.1f} | stage={evaluation_metrics['mean_stage']:.1f} | max_stage={evaluation_metrics['mean_max_stage']:.1f} | completion={evaluation_metrics['completion_rate']:.0%}")
 
             if len(histories) >= 2000 and episode >= int(active_params.get("stagnation_min_episodes", 1000)):
                 window = histories[-2000:]

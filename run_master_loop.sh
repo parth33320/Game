@@ -1,5 +1,13 @@
 #!/bin/bash
 
+LOCK_FILE="${TMPDIR:-/tmp}/castlevania_master_loop.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[Master Loop] Another training loop is already running; exiting."
+    exit 0
+fi
+trap 'flock -u 9' EXIT
+
 echo "👾 [Master Loop] Registering Castlevania ROM..."
 python3 -m retro.import .
 
