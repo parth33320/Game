@@ -268,6 +268,26 @@ class HeadlessRetroEnv:
 
         return self._get_stacked_obs(), info
 
+    def load_savestate(self, state_path: str) -> bool:
+        if self.retro_env is None or not os.path.isfile(state_path):
+            return False
+        try:
+            opener = open
+            with opener(state_path, "rb") as stream:
+                self.retro_env.initial_state = stream.read()
+            self.retro_env.statename = os.path.basename(state_path)
+            return True
+        except (OSError, EOFError):
+            return False
+
+    def capture_savestate(self) -> Optional[bytes]:
+        if self.retro_env is None or not hasattr(self.retro_env, "em"):
+            return None
+        try:
+            return bytes(self.retro_env.em.get_state())
+        except (AttributeError, TypeError, ValueError):
+            return None
+
     def auto_restart(self) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Executes automated button sequence (START) to auto-restart the game
