@@ -8,6 +8,7 @@ from typing import Callable, Optional, Dict, Any
 class CastlevaniaAutonomousEngine:
     """
     Autonomous state machine orchestrator for NES Castlevania CPU RL training and continuous 24/7 streaming.
+    - Automatically loads 'checkpoints/imitation_baseline.pt' on startup to bootstrap RL with expert knowledge.
     - Handles system state freezes (0x03 loading transitions, 0x0C stage clear scoring).
     - Automatically pulses START button for menu registers (Title Screen, Game Over 0x07).
     - Triggers snapshots upon boss defeat and periodically saves model weights every 10 minutes to local/cloud storage.
@@ -19,13 +20,15 @@ class CastlevaniaAutonomousEngine:
         save_dir: str = "checkpoints",
         stream_key: Optional[str] = None,
         max_episodes_before_flush: int = 50,
-        checkpoint_interval_seconds: float = 600.0  # 10 minutes
+        checkpoint_interval_seconds: float = 600.0,  # 10 minutes
+        baseline_checkpoint: str = "checkpoints/imitation_baseline.pt"
     ):
         self.create_env = env_creation_func
         self.save_dir = save_dir
         self.stream_key = stream_key
         self.max_episodes_before_flush = max_episodes_before_flush
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
+        self.baseline_checkpoint = baseline_checkpoint
 
         os.makedirs(self.save_dir, exist_ok=True)
 
@@ -37,6 +40,52 @@ class CastlevaniaAutonomousEngine:
         self.prev_boss_health = 16
         self.boss_just_defeated = False
         self.current_state = "PLAYING"
+        self.baseline_loaded = False
+
+        if os.path.exists(self.baseline_checkpoint):
+            print(f"💡 Imitation baseline detected at startup: '{self.baseline_checkpoint}'. Ready to load expert policy weights.")
+
+    def load_baseline_if_available(self, rl_agent: Any) -> bool:
+        """
+        Loads pre-trained imitation baseline weights (checkpoints/imitation_baseline.pt)
+        automatically upon startup if present, bootstrapping the agent with expert knowledge.
+        """
+        if self.baseline_loaded:
+            return True
+
+        candidates = [
+            self.baseline_checkpoint,
+            os.path.join(self.save_dir, "imitation_baseline.pt"),
+            os.path.join(self.save_dir, "model_weights_latest.pt")
+        ]
+
+        for ckpt in candidates:
+            if os.path.exists(ckpt):
+                try:
+                    loaded = False
+                    if hasattr(rl_agent, "load_checkpoint_weights"):
+                        loaded = rl_agent.load_checkpoint_weights(ckpt)
+                    elif hasattr(rl_agent, "model") and hasattr(rl_agent.model, "load_checkpoint_weights"):
+                        loaded = rl_agent.model.load_checkpoint_weights(ckpt)
+                    else:
+                        state_dict = torch.load(ckpt, map_location="cpu", weights_only=False)
+                        if isinstance(state_dict, dict) and "model_state_dict" in state_dict:
+                            state_dict = state_dict["model_state_dict"]
+                        if hasattr(rl_agent, "load_state_dict"):
+                            rl_agent.load_state_dict(state_dict)
+                            loaded = True
+                        elif hasattr(rl_agent, "model") and hasattr(rl_agent.model, "load_state_dict"):
+                            rl_agent.model.load_state_dict(state_dict)
+                            loaded = True
+
+                    if loaded:
+                        print(f"🚀 CastlevaniaAutonomousEngine startup: Successfully auto-loaded expert baseline weights from '{ckpt}'!")
+                        self.baseline_loaded = True
+                        return True
+                except Exception as e:
+                    print(f"⚠️ Failed to auto-load baseline weights from '{ckpt}': {e}")
+
+        return False
 
     def get_ram_safely(self) -> Optional[Any]:
         try:
@@ -92,6 +141,9 @@ class CastlevaniaAutonomousEngine:
                 print(f"⚠️ Error saving 10-minute periodic checkpoint: {e}")
 
     def process_autonomous_step(self, rl_agent: Any, rl_agent_policy_func: Callable):
+        # Auto-load pre-trained imitation baseline weights upon initial step if available
+        self.load_baseline_if_available(rl_agent)
+
         ram = self.get_ram_safely()
 
         # Handle periodic 10-min model saving
