@@ -15,7 +15,12 @@ from agent.model import ActorCriticPPO
 from scripts.stream_gameplay import FFmpegRestreamStreamer
 
 def draw_hud(frame: np.ndarray, info: Dict[str, Any], action_name: str, speed_multiplier: float = 8.0) -> np.ndarray:
-    """Draws telemetry HUD and AI overlay on gameplay video frame (640x360)."""
+    """Draws telemetry HUD and AI overlay on gameplay video frame (1280x720 720p HD)."""
+    # Ensure background canvas is 1280x720 HD
+    h, w = frame.shape[:2]
+    if w != 1280 or h != 720:
+        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_NEAREST)
+
     pil_img = Image.fromarray(frame)
     draw = ImageDraw.Draw(pil_img)
 
@@ -26,43 +31,43 @@ def draw_hud(frame: np.ndarray, info: Dict[str, Any], action_name: str, speed_mu
         font = None
 
     # Top Telemetry Banner
-    banner_height = 50
-    draw.rectangle([0, 0, 640, banner_height], fill=(20, 20, 25))
+    banner_height = 80
+    draw.rectangle([0, 0, 1280, banner_height], fill=(20, 20, 25))
 
     # Text overlay
-    title_text = "AI CASTLEVANIA MAX-SPEED WALKTHROUGH & AUTO-RESTART"
+    title_text = "AI CASTLEVANIA MAX-SPEED WALKTHROUGH & AUTO-RESTART (720p HD)"
     stats_line1 = f"STAGE: {info.get('stage', 0)} | HP: {info.get('health', 16)}/16 | LIVES: {info.get('lives', 3)} | HEARTS: {info.get('hearts', 0)}"
     stats_line2 = f"X-POS: {int(info.get('x_pos', 0))}px | BOSS HP: {info.get('boss_hp', 16)}/16 | SPEED: {speed_multiplier:.1f}x"
     action_text = f"ACTION: {action_name} | STAIRS: {info.get('is_on_stairs')} | DOOR: {info.get('is_door_transition')}"
 
-    draw.text((10, 5), title_text, fill=(255, 215, 0), font=font)
-    draw.text((10, 18), stats_line1, fill=(255, 255, 255), font=font)
-    draw.text((10, 32), stats_line2, fill=(0, 255, 128), font=font)
+    draw.text((20, 10), title_text, fill=(255, 215, 0), font=font)
+    draw.text((20, 32), stats_line1, fill=(255, 255, 255), font=font)
+    draw.text((20, 54), stats_line2, fill=(0, 255, 128), font=font)
 
     # Bottom Action Bar
-    draw.rectangle([0, 335, 640, 360], fill=(15, 15, 20))
-    draw.text((10, 340), action_text, fill=(255, 128, 0), font=font)
+    draw.rectangle([0, 670, 1280, 720], fill=(15, 15, 20))
+    draw.text((20, 685), action_text, fill=(255, 128, 0), font=font)
 
     if info.get("game_completed"):
-        draw.rectangle([120, 150, 520, 210], fill=(0, 180, 0))
-        draw.text((140, 170), "GAME COMPLETED! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
+        draw.rectangle([240, 300, 1040, 420], fill=(0, 180, 0))
+        draw.text((280, 350), "GAME COMPLETED! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
     elif info.get("lives", 3) <= 0:
-        draw.rectangle([120, 150, 520, 210], fill=(180, 0, 0))
-        draw.text((140, 170), "GAME OVER! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
+        draw.rectangle([240, 300, 1040, 420], fill=(180, 0, 0))
+        draw.text((280, 350), "GAME OVER! AUTO-RESTARTING NEW GAME...", fill=(255, 255, 255), font=font)
 
     return np.array(pil_img)
 
 def generate_walkthrough_video(
     output_path: str = "castlevania_walkthrough.mp4",
     num_steps: int = 300,
-    width: int = 640,
-    height: int = 360,
+    width: int = 1280,
+    height: int = 720,
     fps: int = 30,
     stream_key: Optional[str] = None,
     rtmp_url: str = "rtmp://a.rtmp.youtube.com/live2"
 ):
     """
-    Simulates max-speed CPU RL AI Castlevania gameplay, renders 360p 30fps frames with telemetry HUD,
+    Simulates max-speed CPU RL AI Castlevania gameplay, renders 720p HD 30fps frames with telemetry HUD,
     and records an end-to-end MP4 video showing gameplay completion and auto-restarting a new game.
     Also supports live streaming via YouTube RTMP.
     """
@@ -125,18 +130,21 @@ def generate_walkthrough_video(
         obs = next_obs
 
         # Generate frame image
-                # Extract clean visual data straight from the native Libretro emulator core if enabled
+        # Extract clean visual data straight from native Libretro emulator core via mode="rgb_array" or render()
+        canvas = None
         if hasattr(env, 'retro_env') and env.retro_env is not None:
-            # Gather raw frame buffer array
-            canvas = env.retro_env.render()
-            if canvas is None:
-                canvas = np.zeros((height, width, 3), dtype=np.uint8)
-            else:
-                canvas = cv2.resize(canvas, (width, height), interpolation=cv2.INTER_NEAREST)
-        else:
-            canvas = np.zeros((height, width, 3), dtype=np.uint8)
+            try:
+                canvas = env.retro_env.render(mode="rgb_array")
+            except TypeError:
+                canvas = env.retro_env.render()
 
-        # Apply HUD overlay
+        if canvas is None:
+            canvas = np.zeros((height, width, 3), dtype=np.uint8)
+        else:
+            # Resize raw NES frame buffer to 720p HD target resolution (1280x720)
+            canvas = cv2.resize(canvas, (width, height), interpolation=cv2.INTER_NEAREST)
+
+        # Apply HUD overlay onto the 720p HD frame
         frame_hud = draw_hud(canvas, info, action_name, speed_multiplier=8.0)
 
         # Write to video
@@ -158,6 +166,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Castlevania Max Speed Walkthrough Video & Stream")
     parser.add_argument("--output", type=str, default="castlevania_walkthrough.mp4", help="Output MP4 file path")
     parser.add_argument("--steps", type=int, default=300, help="Total video frame steps to render")
+    parser.add_argument("--width", type=int, default=1280, help="Video width (720p default: 1280)")
+    parser.add_argument("--height", type=int, default=720, help="Video height (720p default: 720)")
     parser.add_argument("--stream-key", type=str, default=None, help="Optional YouTube RTMP Stream Key")
     parser.add_argument("--rtmp-url", type=str, default="rtmp://a.rtmp.youtube.com/live2", help="RTMP Ingest URL")
 
@@ -165,6 +175,8 @@ if __name__ == "__main__":
     generate_walkthrough_video(
         output_path=args.output,
         num_steps=args.steps,
+        width=args.width,
+        height=args.height,
         stream_key=args.stream_key,
         rtmp_url=args.rtmp_url
     )
