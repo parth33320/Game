@@ -1,0 +1,54 @@
+[
+  {
+    "path": "CastlevaniaTAS.bk2",
+    "frames": 40573,
+    "progress_score": 3217.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 2,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "timeout"
+  },
+  {
+    "path": "challanger,eien86-castlevania.bk2",
+    "frames": 36788,
+    "progress_score": 3519.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "timeout"
+  },
+  {
+    "path": "eien86_challenger-castlevania-pacifist_minimalist.bk2",
+    "frames": 39390,
+    "progress_score": 1163.0,
+    "max_stage": 0,
+    "visited_area_count": 5,
+    "stage_transition_count": 0,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "timeout"
+  },
+  {
+    "path": "scrimpeh-castlevania-nosubweapons_nodamage.fm2",
+    "frames": 47985,
+    "progress_score": 3519.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 2,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "timeout"
+  }
+]

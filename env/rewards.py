@@ -19,7 +19,11 @@ class RetroRewardEngine:
         stuck_penalty: float = -0.5,
         progress_multiplier: float = 1.0,
         stage_reward: float = 100.0,
-        completion_reward: float = 500.0
+        completion_reward: float = 500.0,
+        boss_damage_reward: float = 5.0,
+        area_discovery_reward: float = 2.0,
+        door_transition_reward: float = 1.0,
+        stairs_reward: float = 1.0
     ):
         self.progress_weight = progress_weight
         self.heart_weight = heart_weight
@@ -31,6 +35,10 @@ class RetroRewardEngine:
         self.progress_multiplier = progress_multiplier
         self.stage_reward = stage_reward
         self.completion_reward = completion_reward
+        self.boss_damage_reward = boss_damage_reward
+        self.area_discovery_reward = area_discovery_reward
+        self.door_transition_reward = door_transition_reward
+        self.stairs_reward = stairs_reward
 
         self.max_x = 0.0
         self.last_x = 0.0
@@ -39,6 +47,10 @@ class RetroRewardEngine:
         self.last_health = 16
         self.last_lives = 3
         self.last_stage = 0
+        self.last_boss_hp = 16
+        self.last_area_id = None
+        self.last_door_transition = False
+        self.last_stairs = False
         self.last_completed = False
         self.stuck_counter = 0
 
@@ -50,6 +62,10 @@ class RetroRewardEngine:
         self.last_health = int(info.get("health", 16))
         self.last_lives = int(info.get("lives", 3))
         self.last_stage = int(info.get("stage", 0))
+        self.last_boss_hp = int(info.get("boss_hp", 16))
+        self.last_area_id = info.get("area_id")
+        self.last_door_transition = bool(info.get("is_door_transition", False))
+        self.last_stairs = bool(info.get("is_on_stairs", False))
         self.last_completed = bool(info.get("game_completed", False))
         self.stuck_counter = 0
 
@@ -61,6 +77,10 @@ class RetroRewardEngine:
         curr_lives = int(info.get("lives", 3))
         curr_stage = int(info.get("stage", 0))
         curr_completed = bool(info.get("game_completed", False))
+        curr_boss_hp = int(info.get("boss_hp", 16))
+        curr_area_id = info.get("area_id")
+        curr_door_transition = bool(info.get("is_door_transition", False))
+        curr_stairs = bool(info.get("is_on_stairs", False))
 
         reward = 0.0
 
@@ -95,6 +115,14 @@ class RetroRewardEngine:
             reward += (curr_stage - self.last_stage) * self.stage_reward
         if curr_completed and not self.last_completed:
             reward += self.completion_reward
+        if bool(info.get("in_boss_room", False)) and curr_boss_hp < self.last_boss_hp:
+            reward += (self.last_boss_hp - curr_boss_hp) * self.boss_damage_reward
+        if curr_area_id is not None and curr_area_id != self.last_area_id:
+            reward += self.area_discovery_reward
+        if curr_door_transition and not self.last_door_transition:
+            reward += self.door_transition_reward
+        if curr_stairs and not self.last_stairs:
+            reward += self.stairs_reward
 
         self.last_x = curr_x
         self.last_hearts = curr_hearts
@@ -103,5 +131,9 @@ class RetroRewardEngine:
         self.last_lives = curr_lives
         self.last_stage = curr_stage
         self.last_completed = curr_completed
+        self.last_boss_hp = curr_boss_hp
+        self.last_area_id = curr_area_id
+        self.last_door_transition = curr_door_transition
+        self.last_stairs = curr_stairs
 
         return reward

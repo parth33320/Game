@@ -114,6 +114,14 @@ def save_training_checkpoint(path: str, episode: int, max_x_pos: float, model: A
         "in_boss_room": bool(metadata.get("in_boss_room", False)),
         "health": int(metadata.get("health", 16)),
         "lives": int(metadata.get("lives", 3)),
+        "max_stage": int(metadata.get("max_stage", metadata.get("stage", 0))),
+        "progress_score": float(metadata.get("progress_score", max_x_pos)),
+        "area_id": metadata.get("area_id", "unknown"),
+        "visited_area_count": int(metadata.get("visited_area_count", 0)),
+        "stage_transition_count": int(metadata.get("stage_transition_count", 0)),
+        "boss_room_entries": int(metadata.get("boss_room_entries", 0)),
+        "bosses_defeated": list(metadata.get("bosses_defeated", [])),
+        "boss_damage_total": int(metadata.get("boss_damage_total", 0)),
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
     }, path)
@@ -122,8 +130,14 @@ def collect_rollout_worker(args):
     worker_id, episode, model_state, active_params = args[:4]
     deterministic = bool(args[4]) if len(args) > 4 else False
     torch.set_num_threads(1)
-    base_steps = int(active_params.get("curriculum_steps", 400)) + int(active_params.get("curriculum_phase", 0)) * 100
-    env = HeadlessRetroEnv(obs_type="ram", use_retro=True, base_max_steps=base_steps, reward_params=active_params)
+    base_steps = int(active_params.get("curriculum_steps", 400)) + int(active_params.get("curriculum_phase", 0)) * int(active_params.get("curriculum_phase_step_bonus", 300))
+    env = HeadlessRetroEnv(
+        obs_type="ram",
+        use_retro=True,
+        base_max_steps=base_steps,
+        reward_params=active_params,
+        stage_width=float(active_params.get("stage_width", 2000.0)),
+    )
     curriculum_phase = int(active_params.get("curriculum_phase", 0))
     state_dir = active_params.get("savestate_dir", "checkpoints/savestates")
     state_path = os.path.join(state_dir, f"phase_{curriculum_phase}.state")
@@ -197,31 +211,30 @@ class RolloutBatchExecutor:
             raise ValueError("RolloutBatchExecutor only supports collect_rollout_worker")
         result_queue = self.context.Queue()
         processes = [self.context.Process(target=_rollout_process_entry, args=(args, result_queue)) for args in batch]
-        for process in processes:
-            process.start()
+        try:
+            for process in processes:
+                process.start()
 
-        results = {}
-        for _ in processes:
-            try:
-                message = result_queue.get(timeout=300)
-            except queue_module.Empty as error:
-                for process in processes:
-                    process.terminate()
-                for process in processes:
-                    process.join()
-                raise RuntimeError("Worker exited or timed out before returning its rollout") from error
-            if message[0] == "error":
-                for process in processes:
-                    process.terminate()
-                for process in processes:
-                    process.join()
-                raise RuntimeError(f"Worker {message[1]} failed: {message[2]}: {message[3]}")
-            results[message[1]] = message[2]
+            results = {}
+            for _ in processes:
+                try:
+                    message = result_queue.get(timeout=300)
+                except queue_module.Empty as error:
+                    raise RuntimeError("Worker exited or timed out before returning its rollout") from error
+                if message[0] == "error":
+                    raise RuntimeError(f"Worker {message[1]} failed: {message[2]}: {message[3]}")
+                results[message[1]] = message[2]
 
-        for process in processes:
-            process.join()
-        result_queue.close()
-        return [results[args[0]] for args in batch]
+            for process in processes:
+                process.join()
+            return [results[args[0]] for args in batch]
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.terminate()
+                process.join()
+            result_queue.close()
+            result_queue.join_thread()
 
 def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_params: dict, worker_count: int):
     os.makedirs(checkpoint_dir, exist_ok=True)

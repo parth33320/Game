@@ -65,7 +65,8 @@ class HeadlessRetroEnv:
         base_max_steps: int = 400,
         use_retro: bool = True,
         obs_type: str = "ram",  # "ram" for 1D CPU MLP vector or "pixels" for 2D stacked frame
-        reward_params: Optional[Dict[str, Any]] = None
+        reward_params: Optional[Dict[str, Any]] = None,
+        stage_width: float = 2000.0
     ):
         self.frame_shape = frame_shape
         self.num_stack = num_stack
@@ -73,6 +74,7 @@ class HeadlessRetroEnv:
         self.max_episode_steps = base_max_steps
         self.step_count = 0
         self.obs_type = obs_type
+        self.stage_width = stage_width
         reward_params = reward_params or {}
         self.reward_engine = RetroRewardEngine(
             progress_weight=float(reward_params.get("distance_weight", 1.0)),
@@ -81,6 +83,10 @@ class HeadlessRetroEnv:
             progress_multiplier=float(reward_params.get("progress_multiplier", 1.0)),
             stage_reward=float(reward_params.get("stage_reward", 100.0)),
             completion_reward=float(reward_params.get("completion_reward", 500.0)),
+            boss_damage_reward=float(reward_params.get("boss_damage_reward", 5.0)),
+            area_discovery_reward=float(reward_params.get("area_discovery_reward", 2.0)),
+            door_transition_reward=float(reward_params.get("door_transition_reward", 1.0)),
+            stairs_reward=float(reward_params.get("stairs_reward", 1.0)),
         )
 
         self.frame_buffer = deque(maxlen=num_stack)
@@ -100,6 +106,13 @@ class HeadlessRetroEnv:
         self.stage = 0
         self.boss_hp = 16
         self.prev_boss_hp = 16
+        self.prev_stage = 0
+        self.max_stage = 0
+        self.visited_areas = set()
+        self.bosses_defeated = set()
+        self.boss_damage_total = 0
+        self.stage_transition_count = 0
+        self.boss_room_entries = 0
         self.in_boss_room = False
         self.is_on_stairs = False
         self.is_door_transition = False
@@ -175,13 +188,20 @@ class HeadlessRetroEnv:
                 if ram is not None and len(ram) >= 2048:
                     self.fine_x = int(ram[0x0040])
                     self.coarse_screen = int(ram[0x0041])
-                    self.global_x_pos = float(self.coarse_screen * 256 + self.fine_x)
+                    local_x_pos = float(self.coarse_screen * 256 + self.fine_x)
 
                     self.y_pos = int(ram[0x0038]) if len(ram) > 0x0038 else int(ram[0x0028])
                     self.lives = int(ram[0x002A])
                     self.health = int(ram[0x0044])
                     self.hearts = int(ram[0x0040]) if len(ram) <= 0x0040 else int(ram[0x0042])
                     self.stage = int(ram[0x0070])
+                    self.global_x_pos = self.stage * self.stage_width + local_x_pos
+                    if self.stage != self.prev_stage:
+                        self.stage_transition_count += 1
+                    self.max_stage = max(self.max_stage, self.stage)
+                    self.visited_areas.add((self.stage, self.coarse_screen))
+                    self.max_stage = max(self.max_stage, self.stage)
+                    self.visited_areas.add((self.stage, self.coarse_screen))
 
                     # RAM Edge Case 1: Movement State & Stairs ($0020 == 0x08 or 0x0A)
                     self.movement_state_byte = int(ram[0x0020])
@@ -193,11 +213,19 @@ class HeadlessRetroEnv:
 
                     # RAM Edge Case 4: Boss HP ($01AA) & Boss Room Detection
                     if len(ram) > 0x01AA:
+                        was_in_boss_room = self.in_boss_room
                         self.boss_hp = int(ram[0x01AA])
-                        self.in_boss_room = (self.boss_hp > 0 and self.boss_hp <= 16 and self.stage in (3, 6, 9, 12, 15, 18))
+                        self.in_boss_room = (self.boss_hp > 0 and self.stage in (3, 6, 9, 12, 15, 18))
+                        if self.in_boss_room and not was_in_boss_room:
+                            self.boss_room_entries += 1
                     else:
                         self.boss_hp = 16
                         self.in_boss_room = False
+                    if self.stage in (3, 6, 9, 12, 15, 18) and self.prev_boss_hp > 0 and self.boss_hp <= 0:
+                        self.bosses_defeated.add(self.stage)
+                    if self.in_boss_room and self.boss_hp < self.prev_boss_hp:
+                        self.boss_damage_total += self.prev_boss_hp - self.boss_hp
+                    self.prev_stage = self.stage
 
                     # Completion is confirmed by the final stage marker. The old
                     # 0x001A and 0x0A checks also occur during normal gameplay.
@@ -222,6 +250,13 @@ class HeadlessRetroEnv:
         self.stage = 0
         self.boss_hp = 16
         self.prev_boss_hp = 16
+        self.prev_stage = 0
+        self.max_stage = 0
+        self.visited_areas.clear()
+        self.bosses_defeated.clear()
+        self.boss_damage_total = 0
+        self.stage_transition_count = 0
+        self.boss_room_entries = 0
         self.in_boss_room = False
         self.is_on_stairs = False
         self.is_door_transition = False
@@ -260,6 +295,14 @@ class HeadlessRetroEnv:
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "game_state_byte": self.game_state_byte,
+            "max_stage": self.max_stage,
+            "progress_score": self.max_x_pos,
+            "area_id": f"stage_{self.stage}_screen_{self.coarse_screen}",
+            "visited_area_count": len(self.visited_areas),
+            "stage_transition_count": self.stage_transition_count,
+            "boss_room_entries": self.boss_room_entries,
+            "bosses_defeated": sorted(self.bosses_defeated),
+            "boss_damage_total": self.boss_damage_total,
             "reward_hacking_detected": False,
             "max_steps": self.max_episode_steps,
             "termination_reason": "running"
@@ -377,6 +420,14 @@ class HeadlessRetroEnv:
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "game_state_byte": self.game_state_byte,
+            "max_stage": self.max_stage,
+            "progress_score": self.max_x_pos,
+            "area_id": f"stage_{self.stage}_screen_{self.coarse_screen}",
+            "visited_area_count": len(self.visited_areas),
+            "stage_transition_count": self.stage_transition_count,
+            "boss_room_entries": self.boss_room_entries,
+            "bosses_defeated": sorted(self.bosses_defeated),
+            "boss_damage_total": self.boss_damage_total,
             "max_steps": self.max_episode_steps
         }
 
