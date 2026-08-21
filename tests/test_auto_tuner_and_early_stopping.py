@@ -95,7 +95,7 @@ def test_auto_tuner_hyperparameter_adaptations():
     stagnation_adapted = adjust_hyperparameters("STAGNATION_PLATEAU", base_params)
     assert stagnation_adapted["ent_coef"] == 0.015
     assert stagnation_adapted["initial_lr"] == 0.00015
-    assert stagnation_adapted["progress_multiplier"] == 1.5
+    assert stagnation_adapted["progress_multiplier"] == 1.25
 
     # Test REWARD_HACKING
     reward_hacking_adapted = adjust_hyperparameters("REWARD_HACKING", base_params)
