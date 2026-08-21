@@ -1,0 +1,61 @@
+SystemID NES
+0004	b	h	0	RAM	RNG State
+0018	b	u	0	RAM	Game Mode
+0019	b	u	0	RAM	Game Sub-Mode
+001A	w	u	0	RAM	Stage Timer
+0028	b	u	0	RAM	Current Stage
+0046	b	u	0	RAM	Current Substage
+002A	b	u	0	RAM	Simon Lives
+002E	w	u	0	RAM	Screen Offset
+003E	b	u	0	RAM	Simon Stair Mode
+003F	b	u	0	RAM	Simon Pos Y
+0040	w	u	0	RAM	Simon Pos X
+0045	b	u	0	RAM	Simon Life Meter
+005B	b	u	0	RAM	Simon Invulnerability
+005F	b	u	0	RAM	Simon Kneeling Mode
+0064	b	u	0	RAM	Subweapon Shot
+0070	b	u	0	RAM	Whip Length
+0071	b	u	0	RAM	Simon Heart Count
+0159	b	u	0	RAM	Simon Image
+015B	b	u	0	RAM	Subweapon
+0450	b	u	0	RAM	Simon Facing Direction
+046C	b	u	0	RAM	Simon State
+0584	b	u	0	RAM	Simon Substate
+04DC	b	u	0	RAM	Simon Vertical Speed
+0514	b	u	0	RAM	Simon Vertical Direction
+01A9	b	u	0	RAM	Boss Health
+0393	b	u	0	RAM	Boss Pos X
+035B	b	u	0	RAM	Boss Pos Y
+032D	b	u	0	RAM	Boss Image
+0059	b	u	0	RAM	Boss Is Active
+038F	b	u	0	RAM	Boss State
+0553	b	u	0	RAM	Boss Timer
+007E	b	u	0	RAM	grabItemTimer
+00C0	b	u	0	RAM	grabItemFrame
+0390	b	u	0	RAM	Enemy 1 Pos X
+0391	b	u	0	RAM	Enemy 2 Pos X
+0392	b	u	0	RAM	Enemy 3 Pos X
+0438	b	u	0	RAM	Enemy 1 State
+0439	b	u	0	RAM	Enemy 2 State
+043A	b	u	0	RAM	Enemy 3 State
+0395	b	u	0	RAM	Bat / Medusa Pos X
+035D	b	u	0	RAM	Bat / Medusa Pos Y
+007B	b	u	0	RAM	Item Drop Counter
+057C	b	u	0	RAM	Freeze Timer
+038C	b	h	0	RAM	Simon Screen Offset
+056C	b	u	0	RAM	Enemy 1 Holy Water Lock State
+057C	b	u	0	RAM	Holy Water Fire 1
+04C9	b	u	0	RAM	Bat/Medusa 1 State
+0393	b	u	0	RAM	Skeleton Pos X
+0361	b	u	0	RAM	Skeleton Bone 1
+0360	b	u	0	RAM	Skeleton Bone 2
+0362	b	u	0	RAM	Skeleton Bone 3
+0394	b	u	0	RAM	Mummy 2 Pos X
+0079	b	u	0	RAM	Subweapon Hit Count
+0464	b	u	0	RAM	Subweapon Shot 1 Bounced
+0465	b	u	0	RAM	Subweapon Shot 2 Bounced
+0480	b	u	0	RAM	Subweapon Shot 1 Direction
+0481	b	u	0	RAM	Subweapon Shot 2 Direction
+0399	b	u	0	RAM	Bat Bullet X
+0361	b	u	0	RAM	Bat Bullet Y
+
