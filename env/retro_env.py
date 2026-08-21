@@ -64,7 +64,8 @@ class HeadlessRetroEnv:
         num_stack: int = 4,
         base_max_steps: int = 400,
         use_retro: bool = True,
-        obs_type: str = "ram"  # "ram" for 1D CPU MLP vector or "pixels" for 2D stacked frame
+        obs_type: str = "ram",  # "ram" for 1D CPU MLP vector or "pixels" for 2D stacked frame
+        reward_params: Optional[Dict[str, Any]] = None
     ):
         self.frame_shape = frame_shape
         self.num_stack = num_stack
@@ -72,7 +73,15 @@ class HeadlessRetroEnv:
         self.max_episode_steps = base_max_steps
         self.step_count = 0
         self.obs_type = obs_type
-        self.reward_engine = RetroRewardEngine()
+        reward_params = reward_params or {}
+        self.reward_engine = RetroRewardEngine(
+            progress_weight=float(reward_params.get("distance_weight", 1.0)),
+            score_weight=float(reward_params.get("score_weight", 0.05)),
+            time_penalty=float(reward_params.get("time_penalty", -0.02)),
+            progress_multiplier=float(reward_params.get("progress_multiplier", 1.0)),
+            stage_reward=float(reward_params.get("stage_reward", 100.0)),
+            completion_reward=float(reward_params.get("completion_reward", 500.0)),
+        )
 
         self.frame_buffer = deque(maxlen=num_stack)
         self.action_history = deque(maxlen=30)
@@ -106,7 +115,8 @@ class HeadlessRetroEnv:
 
         if self.use_retro:
             try:
-                self.retro_env = stable_retro.make(game="Castlevania-Nes-v0", render_mode="rgb_array")
+                render_mode = "rgb_array" if self.obs_type != "ram" else None
+                self.retro_env = stable_retro.make(game="Castlevania-Nes-v0", render_mode=render_mode)
             except Exception as e:
                 print(f"Warning: Could not initialize stable_retro ({e}). Falling back to internal engine.")
                 self.retro_env = None
@@ -189,8 +199,9 @@ class HeadlessRetroEnv:
                         self.boss_hp = 16
                         self.in_boss_room = False
 
-                    # Game Completion check ($001A == 1 or stage >= 18)
-                    if self.stage >= 18 or ram[0x001A] == 1 or self.game_state_byte == 0x0A:
+                    # Completion is confirmed by the final stage marker. The old
+                    # 0x001A and 0x0A checks also occur during normal gameplay.
+                    if self.stage >= 18:
                         self.game_completed = True
             except Exception:
                 pass
@@ -229,9 +240,10 @@ class HeadlessRetroEnv:
         else:
             raw_frame = np.zeros(self.frame_shape, dtype=np.uint8)
 
-        processed = _process_frame(raw_frame, shape=self.frame_shape)
-        for _ in range(self.num_stack):
-            self.frame_buffer.append(processed)
+        if self.obs_type != "ram":
+            processed = _process_frame(raw_frame, shape=self.frame_shape)
+            for _ in range(self.num_stack):
+                self.frame_buffer.append(processed)
 
         info = {
             "x_pos": self.global_x_pos,
@@ -247,8 +259,10 @@ class HeadlessRetroEnv:
             "is_door_transition": self.is_door_transition,
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
+            "game_state_byte": self.game_state_byte,
             "reward_hacking_detected": False,
-            "max_steps": self.max_episode_steps
+            "max_steps": self.max_episode_steps,
+            "termination_reason": "running"
         }
         self.reward_engine.reset(info)
 
@@ -299,7 +313,8 @@ class HeadlessRetroEnv:
         if self.retro_env is not None:
             btn_arr = self._action_to_buttons(act_name)
             raw_obs, retro_reward, retro_term, retro_trunc, retro_info = self.retro_env.step(btn_arr)
-            new_frame = _process_frame(raw_obs, shape=self.frame_shape)
+            if self.obs_type != "ram":
+                new_frame = _process_frame(raw_obs, shape=self.frame_shape)
             self._read_ram_and_update()
             if "score" in retro_info:
                 self.score = retro_info["score"]
@@ -373,13 +388,21 @@ class HeadlessRetroEnv:
 
         terminated = self.lives <= 0 or self.game_completed or self.game_state_byte == 0x07
         truncated = self.step_count >= self.max_episode_steps
+        info["termination_reason"] = (
+            "game_completed" if self.game_completed else
+            "game_over" if self.game_state_byte == 0x07 else
+            "lives_depleted" if self.lives <= 0 else
+            "timeout" if truncated else
+            "running"
+        )
 
         # Auto restart if game over or game completed
         if terminated and not self.auto_restarted:
             self.auto_restart()
             info["auto_restarted"] = True
 
-        self.frame_buffer.append(new_frame)
+        if self.obs_type != "ram":
+            self.frame_buffer.append(new_frame)
 
         return self._get_stacked_obs(), reward, terminated, truncated, info
 

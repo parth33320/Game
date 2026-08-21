@@ -60,12 +60,13 @@ def adjust_hyperparameters(failure_reason: str, current_params: Dict[str, Any]) 
 
     if failure_reason == "STAGNATION_PLATEAU":
         curr_ent = float(new_params.get("ent_coef", 0.05))
+        max_ent = max(0.0, float(new_params.get("max_ent_coef", curr_ent * 1.5)))
         curr_lr = float(new_params.get("initial_lr", 1.5e-4))
         curr_prog = float(new_params.get("progress_multiplier", 1.0))
 
-        new_params["ent_coef"] = round(curr_ent * 1.5, 6)
-        new_params["initial_lr"] = max(1e-6, round(curr_lr * 0.5, 8))
-        new_params["progress_multiplier"] = round(curr_prog * 1.5, 4)
+        new_params["ent_coef"] = round(min(curr_ent * 1.5, max_ent), 6)
+        new_params["initial_lr"] = max(3e-5, round(curr_lr * 0.75, 8))
+        new_params["progress_multiplier"] = round(min(curr_prog * 1.25, 3.0), 4)
         print(f"[AutoTuner] Adapted for STAGNATION_PLATEAU: ent_coef={new_params['ent_coef']}, lr={new_params['initial_lr']}, progress_mult={new_params['progress_multiplier']}")
 
     elif failure_reason == "REWARD_HACKING":

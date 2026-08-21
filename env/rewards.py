@@ -16,7 +16,10 @@ class RetroRewardEngine:
         time_penalty: float = -0.02,
         damage_penalty: float = -5.0,
         death_penalty: float = -30.0,
-        stuck_penalty: float = -0.5
+        stuck_penalty: float = -0.5,
+        progress_multiplier: float = 1.0,
+        stage_reward: float = 100.0,
+        completion_reward: float = 500.0
     ):
         self.progress_weight = progress_weight
         self.heart_weight = heart_weight
@@ -25,6 +28,9 @@ class RetroRewardEngine:
         self.damage_penalty = damage_penalty
         self.death_penalty = death_penalty
         self.stuck_penalty = stuck_penalty
+        self.progress_multiplier = progress_multiplier
+        self.stage_reward = stage_reward
+        self.completion_reward = completion_reward
 
         self.max_x = 0.0
         self.last_x = 0.0
@@ -32,6 +38,8 @@ class RetroRewardEngine:
         self.last_score = 0
         self.last_health = 16
         self.last_lives = 3
+        self.last_stage = 0
+        self.last_completed = False
         self.stuck_counter = 0
 
     def reset(self, info: Dict[str, Any]):
@@ -41,6 +49,8 @@ class RetroRewardEngine:
         self.last_score = int(info.get("score", 0))
         self.last_health = int(info.get("health", 16))
         self.last_lives = int(info.get("lives", 3))
+        self.last_stage = int(info.get("stage", 0))
+        self.last_completed = bool(info.get("game_completed", False))
         self.stuck_counter = 0
 
     def calculate_reward(self, info: Dict[str, Any]) -> float:
@@ -49,6 +59,8 @@ class RetroRewardEngine:
         curr_score = int(info.get("score", 0))
         curr_health = int(info.get("health", 16))
         curr_lives = int(info.get("lives", 3))
+        curr_stage = int(info.get("stage", 0))
+        curr_completed = bool(info.get("game_completed", False))
 
         reward = 0.0
 
@@ -59,7 +71,7 @@ class RetroRewardEngine:
         if curr_x > self.max_x:
             x_diff = curr_x - self.max_x
             progress_multiplier = 1.0 + (self.max_x / 100.0)
-            reward += x_diff * self.progress_weight * progress_multiplier
+            reward += x_diff * self.progress_weight * progress_multiplier * self.progress_multiplier
             self.max_x = curr_x
             self.stuck_counter = 0
         else:
@@ -79,10 +91,17 @@ class RetroRewardEngine:
         if curr_lives < self.last_lives:
             reward += self.death_penalty
 
+        if curr_stage > self.last_stage:
+            reward += (curr_stage - self.last_stage) * self.stage_reward
+        if curr_completed and not self.last_completed:
+            reward += self.completion_reward
+
         self.last_x = curr_x
         self.last_hearts = curr_hearts
         self.last_score = curr_score
         self.last_health = curr_health
         self.last_lives = curr_lives
+        self.last_stage = curr_stage
+        self.last_completed = curr_completed
 
         return reward

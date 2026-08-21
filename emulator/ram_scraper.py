@@ -43,7 +43,7 @@ class RAMScraper:
                     is_game_over = (game_state == 0x07) or lives == 0 or bool(ram[0x0100])
                     is_title_screen = (game_state == 0x00) or bool(ram[0x0101])
                     is_dead = health == 0 or bool(ram[0x0102])
-                    is_completed = stage >= 18 or bool(ram[0x001A]) or (game_state == 0x0A)
+                    is_completed = stage >= 18
 
                     boss_hp = int(ram[0x01AA]) if len(ram) > 0x01AA else 16
                     in_boss_room = (boss_hp > 0 and boss_hp <= 16 and stage in (3, 6, 9, 12, 15, 18))
