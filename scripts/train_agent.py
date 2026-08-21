@@ -124,7 +124,8 @@ def train_ppo_agent(
         reward_calculator_params=rc_params
     )
 
-    model = ActorCriticPPO(input_channels=4, num_actions=8)
+    device = "cpu"
+    model = ActorCriticPPO(input_dim=4, num_actions=8, is_mlp=False).to(device)
     optimizer = optim.Adam(model.parameters(), lr=initial_lr)
     audit_logger = AuditLogger("training_audit.jsonl")
 

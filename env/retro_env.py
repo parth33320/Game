@@ -106,7 +106,7 @@ class HeadlessRetroEnv:
 
         if self.use_retro:
             try:
-                self.retro_env = stable_retro.make(game="Castlevania-Nes-v0", render_mode=None)
+                self.retro_env = stable_retro.make(game="Castlevania-Nes-v0", render_mode="rgb_array")
             except Exception as e:
                 print(f"Warning: Could not initialize stable_retro ({e}). Falling back to internal engine.")
                 self.retro_env = None

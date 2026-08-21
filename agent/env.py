@@ -52,7 +52,8 @@ class MockPlatformerEnv:
         self.reward_hacking_detected = False
 
     def _get_single_frame(self) -> np.ndarray:
-        return np.random.uniform(0.0, 1.0, size=self.frame_shape).astype(np.float32)
+        # Fetch active frame buffer slice from the core
+        return self.env.unwrapped.get_screen() if hasattr(self.env.unwrapped, "get_screen") else np.zeros((84,84,3), dtype=np.float32)
 
     def _get_stacked_obs(self) -> np.ndarray:
         return np.stack(list(self.frame_buffer), axis=0)

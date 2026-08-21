@@ -66,7 +66,7 @@ def generate_walkthrough_video(
     and records an end-to-end MP4 video showing gameplay completion and auto-restarting a new game.
     Also supports live streaming via YouTube RTMP.
     """
-    env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
+    env = HeadlessRetroEnv(obs_type="ram", use_retro=True)
     model = ActorCriticPPO(input_dim=15, num_actions=len(env.ACTION_NAMES), is_mlp=True)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -125,25 +125,16 @@ def generate_walkthrough_video(
         obs = next_obs
 
         # Generate frame image
-        canvas = np.zeros((height, width, 3), dtype=np.uint8)
-
-        # Draw background game scene mockup
-        # Castle floor
-        cv2.rectangle(canvas, (0, 260), (640, 335), (80, 40, 20), -1)
-        # Brick texture
-        for bx in range(0, 640, 40):
-            cv2.line(canvas, (bx, 260), (bx, 335), (40, 20, 10), 2)
-
-        # Player (Simon Belmont representation)
-        px = int(info["x_pos"] % 580) + 20
-        py = 220 if not info["is_on_stairs"] else 180
-        cv2.rectangle(canvas, (px, py), (px + 24, py + 40), (220, 180, 50), -1)
-        cv2.circle(canvas, (px + 12, py - 8), 8, (255, 200, 150), -1)
-
-        # Boss representation if in boss room
-        if info["in_boss_room"]:
-            cv2.rectangle(canvas, (520, 160), (580, 240), (180, 30, 30), -1)
-            cv2.putText(canvas, f"BOSS HP:{info['boss_hp']}", (500, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                # Extract clean visual data straight from the native Libretro emulator core if enabled
+        if hasattr(env, 'retro_env') and env.retro_env is not None:
+            # Gather raw frame buffer array
+            canvas = env.retro_env.render()
+            if canvas is None:
+                canvas = np.zeros((height, width, 3), dtype=np.uint8)
+            else:
+                canvas = cv2.resize(canvas, (width, height), interpolation=cv2.INTER_NEAREST)
+        else:
+            canvas = np.zeros((height, width, 3), dtype=np.uint8)
 
         # Apply HUD overlay
         frame_hud = draw_hud(canvas, info, action_name, speed_multiplier=8.0)
