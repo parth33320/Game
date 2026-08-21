@@ -103,8 +103,8 @@ def save_active_params(params: Dict[str, Any], params_file: str = ACTIVE_PARAMS_
 def resolve_best_distance_checkpoint(checkpoint_dir: str = CHECKPOINT_DIR, resume_target: str = RESUME_TARGET_FILE) -> Optional[str]:
     """
     Scans checkpoints/ directory for all saved best models (e.g. best_ppo_agent_dist_*.pt).
-    Parses metadata or filenames to select model checkpoint with absolute highest max_x_pos (ignoring reward).
-    Symlinks/copies this file to checkpoints/resume_target.pt.
+    Parses metadata headers to select model checkpoint with highest stage (primary) and max_x_pos (secondary).
+    Copies this champion file to checkpoints/resume_target.pt.
     """
     os.makedirs(checkpoint_dir, exist_ok=True)
     if not os.path.exists(checkpoint_dir):
@@ -119,13 +119,14 @@ def resolve_best_distance_checkpoint(checkpoint_dir: str = CHECKPOINT_DIR, resum
         return None
 
     best_ckpt_path = None
-    highest_max_x = -1.0
+    highest_score = (-1, -1.0, -1.0)
+    best_stage = 0
+    highest_max_x = 0.0
 
     for ckpt_path in candidate_ckpts:
         fname = os.path.basename(ckpt_path)
         x_from_file = -1.0
 
-        # Try parsing filename e.g. best_ppo_agent_dist_450.pt or ppo_agent_ep5_450.pt
         if "dist_" in fname:
             try:
                 parts = fname.replace(".pt", "").split("dist_")
@@ -134,28 +135,33 @@ def resolve_best_distance_checkpoint(checkpoint_dir: str = CHECKPOINT_DIR, resum
             except Exception:
                 pass
 
-        # Also inspect checkpoint payload
         x_from_payload = -1.0
+        stage_from_payload = 0
         try:
             payload = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-            if isinstance(payload, dict) and "max_x_pos" in payload:
-                x_from_payload = float(payload["max_x_pos"])
+            if isinstance(payload, dict):
+                stage_from_payload = int(payload.get("max_stage", payload.get("stage", 0)))
+                if "max_x_pos" in payload:
+                    x_from_payload = float(payload["max_x_pos"])
         except Exception:
             pass
 
         effective_max_x = max(x_from_file, x_from_payload)
-
-        # If both fail but checkpoint exists, use file modification time as fallback score
         if effective_max_x < 0.0:
             effective_max_x = 0.0
+        effective_stage = max(0, stage_from_payload)
+        mtime = os.path.getmtime(ckpt_path)
 
-        if effective_max_x > highest_max_x or best_ckpt_path is None:
+        score = (effective_stage, effective_max_x, mtime)
+        if score > highest_score or best_ckpt_path is None:
+            highest_score = score
+            best_stage = effective_stage
             highest_max_x = effective_max_x
             best_ckpt_path = ckpt_path
 
     if best_ckpt_path:
         shutil.copyfile(best_ckpt_path, resume_target)
-        print(f"[AutoTuner] Selected best distance checkpoint '{best_ckpt_path}' (Max X: {highest_max_x:.1f}) -> copied to '{resume_target}'.")
+        print(f"[AutoTuner] Selected champion checkpoint '{best_ckpt_path}' (Stage: {best_stage}, Max X: {highest_max_x:.1f}) -> copied to '{resume_target}'.")
         return resume_target
 
     return None

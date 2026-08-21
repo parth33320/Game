@@ -63,7 +63,16 @@ class PPOTrainer:
             obs_tensor = torch.tensor(obs, dtype=torch.float32)
             action, log_prob, value, entropy = self.model.get_action(obs_tensor)
 
+            prev_lives = info.get("lives", 3)
             next_obs, reward, terminated, truncated, info = self.env.step(action)
+            curr_lives = info.get("lives", 3)
+            curriculum_phase = int(getattr(self.env, "reward_params", {}).get("curriculum_phase", 0))
+
+            if curr_lives < prev_lives and curriculum_phase > 0:
+                reloaded = self.env.load_stage_savestate(info.get("stage", 0), curriculum_phase)
+                if reloaded:
+                    info["stage_savestate_reloaded"] = True
+                    terminated = False
 
             episode_reward += reward
             episode_length += 1

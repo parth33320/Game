@@ -75,18 +75,19 @@ class HeadlessRetroEnv:
         self.step_count = 0
         self.obs_type = obs_type
         self.stage_width = stage_width
-        reward_params = reward_params or {}
+        self.reward_params = reward_params or {}
+        self.savestate_dir = str(self.reward_params.get("savestate_dir", "checkpoints/savestates"))
         self.reward_engine = RetroRewardEngine(
-            progress_weight=float(reward_params.get("distance_weight", 1.0)),
-            score_weight=float(reward_params.get("score_weight", 0.05)),
-            time_penalty=float(reward_params.get("time_penalty", -0.02)),
-            progress_multiplier=float(reward_params.get("progress_multiplier", 1.0)),
-            stage_reward=float(reward_params.get("stage_reward", 100.0)),
-            completion_reward=float(reward_params.get("completion_reward", 500.0)),
-            boss_damage_reward=float(reward_params.get("boss_damage_reward", 5.0)),
-            area_discovery_reward=float(reward_params.get("area_discovery_reward", 2.0)),
-            door_transition_reward=float(reward_params.get("door_transition_reward", 1.0)),
-            stairs_reward=float(reward_params.get("stairs_reward", 1.0)),
+            progress_weight=float(self.reward_params.get("distance_weight", 1.0)),
+            score_weight=float(self.reward_params.get("score_weight", 0.05)),
+            time_penalty=float(self.reward_params.get("time_penalty", -0.02)),
+            progress_multiplier=float(self.reward_params.get("progress_multiplier", 1.0)),
+            stage_reward=float(self.reward_params.get("stage_reward", 100.0)),
+            completion_reward=float(self.reward_params.get("completion_reward", 500.0)),
+            boss_damage_reward=float(self.reward_params.get("boss_damage_reward", 5.0)),
+            area_discovery_reward=float(self.reward_params.get("area_discovery_reward", 2.0)),
+            door_transition_reward=float(self.reward_params.get("door_transition_reward", 1.0)),
+            stairs_reward=float(self.reward_params.get("stairs_reward", 1.0)),
         )
 
         self.frame_buffer = deque(maxlen=num_stack)
@@ -119,6 +120,7 @@ class HeadlessRetroEnv:
         self.game_state_byte = 0x05
         self.movement_state_byte = 0x00
         self.game_completed = False
+        self.completion_frame_counter = 0
         self.auto_restarted = False
         self.accumulated_reward = 0.0
         self.reward_hacking_detected = False
@@ -227,10 +229,14 @@ class HeadlessRetroEnv:
                         self.boss_damage_total += self.prev_boss_hp - self.boss_hp
                     self.prev_stage = self.stage
 
-                    # Completion is confirmed by the final stage marker. The old
-                    # 0x001A and 0x0A checks also occur during normal gameplay.
-                    if self.stage >= 18:
-                        self.game_completed = True
+                    # Hardened Completion Gate: stage >= 18 sustained for 60 consecutive frames
+                    # AND game_state_byte == 0x0C (credits / ending screen state layout byte)
+                    if self.stage >= 18 and self.game_state_byte == 0x0C:
+                        self.completion_frame_counter += 1
+                        if self.completion_frame_counter >= 60:
+                            self.game_completed = True
+                    else:
+                        self.completion_frame_counter = 0
             except Exception:
                 pass
 
@@ -261,6 +267,7 @@ class HeadlessRetroEnv:
         self.is_on_stairs = False
         self.is_door_transition = False
         self.game_completed = False
+        self.completion_frame_counter = 0
         self.accumulated_reward = 0.0
         self.reward_hacking_detected = False
 
@@ -323,6 +330,21 @@ class HeadlessRetroEnv:
         except (OSError, EOFError):
             return False
 
+    def load_stage_savestate(self, stage: int, curriculum_phase: int = 0) -> bool:
+        state_dir = getattr(self, "savestate_dir", "checkpoints/savestates")
+        if not os.path.exists(state_dir):
+            return False
+        for s in range(stage, -1, -1):
+            path = os.path.join(state_dir, f"stage_{s}.state")
+            if os.path.isfile(path) and self.load_savestate(path):
+                self._read_ram_and_update()
+                return True
+        path = os.path.join(state_dir, f"phase_{curriculum_phase}.state")
+        if os.path.isfile(path) and self.load_savestate(path):
+            self._read_ram_and_update()
+            return True
+        return False
+
     def capture_savestate(self) -> Optional[bytes]:
         if self.retro_env is None or not hasattr(self.retro_env, "em"):
             return None
@@ -372,6 +394,7 @@ class HeadlessRetroEnv:
             self.step_count += 1
 
         self.action_history.append(act_name)
+        prev_lives = getattr(self, "prev_lives", self.lives)
 
         if self.retro_env is not None:
             btn_arr = self._action_to_buttons(act_name)
@@ -457,17 +480,29 @@ class HeadlessRetroEnv:
 
         info["reward_hacking_detected"] = self.reward_hacking_detected
 
-        terminated = self.lives <= 0 or self.game_completed or self.game_state_byte == 0x07
+        lives_decremented = (self.lives < prev_lives)
+        self.prev_lives = self.lives
+        info["lives_decremented"] = lives_decremented
+
+        curriculum_phase = int(self.reward_params.get("curriculum_phase", 0))
+        stage_reloaded = False
+        if lives_decremented and curriculum_phase > 0:
+            stage_reloaded = self.load_stage_savestate(self.stage, curriculum_phase)
+            if stage_reloaded:
+                info["stage_savestate_reloaded"] = True
+
+        terminated = (self.lives <= 0 or self.game_completed or self.game_state_byte == 0x07) and not stage_reloaded
         truncated = self.step_count >= self.max_episode_steps
         info["termination_reason"] = (
             "game_completed" if self.game_completed else
+            "stage_reloaded" if stage_reloaded else
             "game_over" if self.game_state_byte == 0x07 else
             "lives_depleted" if self.lives <= 0 else
             "timeout" if truncated else
             "running"
         )
 
-        # Auto restart if game over or game completed
+        # Auto restart if game over or game completed (and not reloaded via savestate)
         if terminated and not self.auto_restarted:
             self.auto_restart()
             info["auto_restarted"] = True

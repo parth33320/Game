@@ -116,22 +116,23 @@ def test_resolve_best_distance_checkpoint(tmp_path):
     os.makedirs(ckpt_dir, exist_ok=True)
     resume_target = str(tmp_path / "resume_target.pt")
 
-    # Save 3 checkpoints with different max_x_pos
+    # Save 3 checkpoints: high stage low X vs low stage high X
     ckpt_1 = os.path.join(ckpt_dir, "best_ppo_agent_dist_120.pt")
     ckpt_2 = os.path.join(ckpt_dir, "best_ppo_agent_dist_480.pt")
-    ckpt_3 = os.path.join(ckpt_dir, "best_ppo_agent_dist_300.pt")
+    ckpt_3 = os.path.join(ckpt_dir, "best_ppo_agent_stage2.pt")
 
-    torch.save({"episode": 10, "max_x_pos": 120.0}, ckpt_1)
-    torch.save({"episode": 25, "max_x_pos": 480.0}, ckpt_2)
-    torch.save({"episode": 18, "max_x_pos": 300.0}, ckpt_3)
+    torch.save({"episode": 10, "stage": 0, "max_x_pos": 120.0}, ckpt_1)
+    torch.save({"episode": 25, "stage": 0, "max_x_pos": 480.0}, ckpt_2)
+    torch.save({"episode": 30, "stage": 2, "max_x_pos": 100.0}, ckpt_3)
 
     selected = resolve_best_distance_checkpoint(checkpoint_dir=ckpt_dir, resume_target=resume_target)
     assert selected == resume_target
     assert os.path.exists(resume_target)
 
-    # Verify resume_target content matches highest max_x_pos (480.0)
+    # Stage 2 should win over stage 0 with higher x_pos
     target_data = torch.load(resume_target, map_location="cpu", weights_only=False)
-    assert target_data["max_x_pos"] == 480.0
+    assert target_data["stage"] == 2
+    assert target_data["max_x_pos"] == 100.0
 
 
 def test_watchdog_closed_loop_orchestration(tmp_path):
