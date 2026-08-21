@@ -62,7 +62,12 @@ def main():
     args = parser.parse_args()
     paths = args.paths or (glob.glob(args.pattern) if args.pattern else [])
     if not paths:
-        parser.error("provide BK2 paths or --glob")
+        default_bk2 = "CastlevaniaTAS.bk2" if os.path.exists("CastlevaniaTAS.bk2") else "Castlevania TAS.bk2"
+        if os.path.exists(default_bk2):
+            paths = [default_bk2]
+        else:
+            parser.error(f"No BK2 paths provided and default file '{default_bk2}' not found")
+    print(f"Pre-training behavioral cloning on full walkthrough trajectory from: {paths}")
     train_imitation(paths, args.output, args.epochs, args.learning_rate)
 
 

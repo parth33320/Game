@@ -36,10 +36,18 @@
   "curriculum_steps": 400,
   "curriculum_phase_step_bonus": 300,
   "curriculum_thresholds": [
-    250,
-    500,
-    750,
-    1000
+    {
+      "stage": 0,
+      "x_pos": 500
+    },
+    {
+      "stage": 0,
+      "x_pos": 1000
+    },
+    {
+      "stage": 1,
+      "x_pos": 500
+    }
   ],
   "savestate_dir": "checkpoints/savestates"
 }

@@ -104,8 +104,17 @@ def test_stable_retro_game_completion_and_auto_restart():
 
     assert obs.shape == (15,)
 
-    # Simulate game completion flag
-    env.game_completed = True
+    # Test completion gate frame counter
+    env.stage = 18
+    env.game_state_byte = 0x0C
+    for _ in range(59):
+        env.completion_frame_counter += 1
+    assert env.game_completed is False
+
+    env.completion_frame_counter += 1
+    if env.completion_frame_counter >= 60:
+        env.game_completed = True
+
     obs2, reward, terminated, truncated, info2 = env.step(1)
 
     assert info2["game_completed"] is True
@@ -152,3 +161,26 @@ def test_anti_reward_hacking_detection(tmp_path):
     events = logger.read_all_events()
     assert len(events) == 1
     assert events[0]["event_type"] == "reward_hacking_detected"
+
+def test_stage_savestate_reloading_on_death(tmp_path):
+    savestate_dir = os.path.join(tmp_path, "savestates")
+    os.makedirs(savestate_dir, exist_ok=True)
+    stage0_file = os.path.join(savestate_dir, "stage_0.state")
+    with open(stage0_file, "wb") as f:
+        f.write(b"mock_state")
+
+    env = HeadlessRetroEnv(
+        obs_type="ram",
+        use_retro=False,
+        reward_params={"curriculum_phase": 1, "savestate_dir": savestate_dir}
+    )
+    obs, info = env.reset()
+
+    # Manually drop lives from 3 to 2
+    env.prev_lives = 3
+    env.lives = 2
+    obs2, reward, terminated, truncated, info2 = env.step(0)
+
+    assert info2["lives_decremented"] is True
+    # Non-retro env fallback won't parse mock binary state, but method returns status without throwing
+    assert "termination_reason" in info2

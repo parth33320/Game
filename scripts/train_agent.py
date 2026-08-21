@@ -22,11 +22,24 @@ ACTIVE_PARAMS_FILE = "config/active_training_params.json"
 RESUME_TARGET_FILE = "checkpoints/resume_target.pt"
 TRAINING_AUDIT_FILE = "training_audit.json"
 
-def curriculum_phase_for_distance(distance: float, active_params: dict) -> int:
+def curriculum_phase_for_stage_and_distance(stage: int, distance: float, active_params: dict) -> int:
     if not active_params.get("curriculum_enabled", True):
         return 0
-    thresholds = active_params.get("curriculum_thresholds", [250, 500, 750, 1000])
-    return sum(distance >= float(threshold) for threshold in thresholds)
+    thresholds = active_params.get("curriculum_thresholds", [{"stage": 0, "x_pos": 500}, {"stage": 0, "x_pos": 1000}, {"stage": 1, "x_pos": 500}])
+    phase = 0
+    for item in thresholds:
+        if isinstance(item, dict):
+            req_stage = int(item.get("stage", 0))
+            req_x = float(item.get("x_pos", 0.0))
+            if stage > req_stage or (stage == req_stage and distance >= req_x):
+                phase += 1
+        elif isinstance(item, (int, float)):
+            if distance >= float(item):
+                phase += 1
+    return phase
+
+def curriculum_phase_for_distance(distance: float, active_params: dict, stage: int = 0) -> int:
+    return curriculum_phase_for_stage_and_distance(stage, distance, active_params)
 
 def load_active_params(params_file: str = ACTIVE_PARAMS_FILE) -> dict:
     default_params = {
@@ -158,7 +171,7 @@ def collect_rollout_worker(args):
     max_x_pos = 0.0
     termination_reason = "unknown"
     milestone_states = {}
-    thresholds = [float(value) for value in active_params.get("curriculum_thresholds", [])]
+    thresholds = active_params.get("curriculum_thresholds", [])
 
     with torch.no_grad():
         while not done:
@@ -179,8 +192,16 @@ def collect_rollout_worker(args):
             entropies.append(float(entropy.item()))
             done = terminated or truncated
             max_x_pos = max(max_x_pos, float(info.get("max_x_pos", 0.0)))
+            curr_stage = int(info.get("stage", 0))
             for index, threshold in enumerate(thresholds, start=1):
-                if max_x_pos >= threshold and index not in milestone_states:
+                met = False
+                if isinstance(threshold, dict):
+                    req_stage = int(threshold.get("stage", 0))
+                    req_x = float(threshold.get("x_pos", 0.0))
+                    met = curr_stage > req_stage or (curr_stage == req_stage and max_x_pos >= req_x)
+                elif isinstance(threshold, (int, float)):
+                    met = max_x_pos >= float(threshold)
+                if met and index not in milestone_states:
                     state = env.capture_savestate()
                     if state is not None:
                         milestone_states[index] = state
@@ -276,7 +297,8 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
     eval_interval = int(active_params.get("evaluation_interval_batches", 50))
     with RolloutBatchExecutor(context, worker_count) as pool:
         for batch_start in range(start_episode, start_episode + total_episodes, worker_count):
-            active_params["curriculum_phase"] = curriculum_phase_for_distance(best_max_x_pos, active_params)
+            current_stage = int(best_info.get("stage", 0)) if isinstance(best_info, dict) else 0
+            active_params["curriculum_phase"] = curriculum_phase_for_stage_and_distance(current_stage, best_max_x_pos, active_params)
             batch = [(index, batch_start + index, {key: value.cpu() for key, value in model.state_dict().items()}, active_params)
                      for index in range(worker_count)]
             try:
@@ -455,9 +477,13 @@ def train_parallel_ppo_agent(checkpoint_dir: str, params_file: str, active_param
             state_dir = active_params.get("savestate_dir", os.path.join(checkpoint_dir, "savestates"))
             os.makedirs(state_dir, exist_ok=True)
             for phase, state in best_milestone_states.items():
-                state_path = os.path.join(state_dir, f"phase_{phase}.state")
-                if not os.path.exists(state_path):
-                    with open(state_path, "wb") as stream:
+                stage_path = os.path.join(state_dir, f"stage_{phase}.state")
+                if not os.path.exists(stage_path):
+                    with open(stage_path, "wb") as stream:
+                        stream.write(state)
+                phase_path = os.path.join(state_dir, f"phase_{phase}.state")
+                if not os.path.exists(phase_path):
+                    with open(phase_path, "wb") as stream:
                         stream.write(state)
             if batches_without_improvement >= recovery_window:
                 model.load_state_dict(best_policy_state)
