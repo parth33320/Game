@@ -48,9 +48,9 @@ class HeadlessRetroEnv:
     Gymnasium-compatible environment wrapper around a headless stable-retro emulator
     using actual Castlevania NES ROM ('Castlevania (USA) (Rev 1).nes').
 
-    Supports both 2D image observations and 1D CPU-normalized RAM-vector observations (~15 features).
+    Supports both 2D image observations and 1D CPU-normalized RAM-vector observations (18 features).
     Addresses Castlevania RAM edge cases:
-    1. Staircase Alignment Traps: Restricts action space to UP/DOWN when on stairs ($0020 == 0x08 or 0x0A).
+    1. Staircase Alignment Traps: Restricts action space to UP/DOWN when on stairs ($003E or $0020 in (0x08, 0x0A)).
     2. Transition Door Delays: Freezes environment timer and executes NOOP when door state ($0018 == 0x08) is active.
     3. Global X-Position: Calculates coarse + fine position (RAM $0041 * 256 + RAM $0040).
     4. Boss Room Soft-Locks: Dynamically shifts progress reward to Boss HP damage when in boss room.
@@ -105,6 +105,8 @@ class HeadlessRetroEnv:
         self.health = 16
         self.lives = 3
         self.stage = 0
+        self.whip_level = 0
+        self.subweapon = 0
         self.boss_hp = 16
         self.prev_boss_hp = 16
         self.prev_stage = 0
@@ -118,6 +120,8 @@ class HeadlessRetroEnv:
         self.is_on_stairs = False
         self.is_door_transition = False
         self.game_state_byte = 0x05
+        self.game_submode_byte = 0x00
+        self.stair_mode_byte = 0x00
         self.movement_state_byte = 0x00
         self.game_completed = False
         self.completion_frame_counter = 0
@@ -152,7 +156,7 @@ class HeadlessRetroEnv:
 
     def _get_ram_vector(self) -> np.ndarray:
         """
-        Returns a 1D normalized float32 RAM observation vector (~15 features bounded between 0.0 and 1.0)
+        Returns a 1D normalized float32 RAM observation vector (18 features bounded between 0.0 and 1.0)
         suitable for high-speed CPU Multi-Layer Perceptron (MLP) training.
         """
         vector = np.array([
@@ -170,7 +174,10 @@ class HeadlessRetroEnv:
             min(self.coarse_screen / 50.0, 1.0),              # Screen section count
             min(self.fine_x / 255.0, 1.0),                    # Fine screen X position
             min(self.game_state_byte / 255.0, 1.0),           # Raw game mode byte
-            min(self.movement_state_byte / 255.0, 1.0)        # Raw movement state byte
+            min(self.game_submode_byte / 255.0, 1.0),         # Raw game submode byte
+            min(self.whip_level / 2.0, 1.0),                  # Whip upgrade level (0, 1, 2)
+            min(self.subweapon / 10.0, 1.0),                  # Equipped subweapon ID
+            min(self.stair_mode_byte / 255.0, 1.0)            # Stair mode byte
         ], dtype=np.float32)
         return vector
 
@@ -192,37 +199,41 @@ class HeadlessRetroEnv:
                     self.coarse_screen = int(ram[0x0041])
                     local_x_pos = float(self.coarse_screen * 256 + self.fine_x)
 
-                    self.y_pos = int(ram[0x0038]) if len(ram) > 0x0038 else int(ram[0x0028])
+                    self.y_pos = int(ram[0x003F]) if len(ram) > 0x003F else int(ram[0x0038])
                     self.lives = int(ram[0x002A])
-                    self.health = int(ram[0x0044])
-                    self.hearts = int(ram[0x0040]) if len(ram) <= 0x0040 else int(ram[0x0042])
-                    self.stage = int(ram[0x0070])
+                    self.health = int(ram[0x0045]) if len(ram) > 0x0045 else int(ram[0x0044])
+                    self.hearts = int(ram[0x0071]) if len(ram) > 0x0071 else int(ram[0x0042])
+                    self.stage = int(ram[0x0028]) if len(ram) > 0x0028 else int(ram[0x0070])
+                    self.whip_level = int(ram[0x0070]) if len(ram) > 0x0070 else 0
+                    self.subweapon = int(ram[0x015B]) if len(ram) > 0x015B else 0
+
                     self.global_x_pos = self.stage * self.stage_width + local_x_pos
                     if self.stage != self.prev_stage:
                         self.stage_transition_count += 1
                     self.max_stage = max(self.max_stage, self.stage)
                     self.visited_areas.add((self.stage, self.coarse_screen))
-                    self.max_stage = max(self.max_stage, self.stage)
-                    self.visited_areas.add((self.stage, self.coarse_screen))
 
-                    # RAM Edge Case 1: Movement State & Stairs ($0020 == 0x08 or 0x0A)
-                    self.movement_state_byte = int(ram[0x0020])
-                    self.is_on_stairs = self.movement_state_byte in (0x08, 0x0A)
+                    # RAM Edge Case 1: Stair Mode ($003E) & Movement State ($0020)
+                    self.stair_mode_byte = int(ram[0x003E]) if len(ram) > 0x003E else 0
+                    self.movement_state_byte = int(ram[0x0020]) if len(ram) > 0x0020 else 0
+                    self.is_on_stairs = (self.stair_mode_byte in (0x08, 0x0A)) or (self.movement_state_byte in (0x08, 0x0A))
 
-                    # RAM Edge Case 2: Door Transition ($0018 == 0x08)
+                    # RAM Edge Case 2: Door Transition ($0018 == 0x08) & Game Submode ($0019)
                     self.game_state_byte = int(ram[0x0018])
+                    self.game_submode_byte = int(ram[0x0019]) if len(ram) > 0x0019 else 0
                     self.is_door_transition = (self.game_state_byte == 0x08)
 
-                    # RAM Edge Case 4: Boss HP ($01AA) & Boss Room Detection
-                    if len(ram) > 0x01AA:
+                    # RAM Edge Case 4: Boss HP ($01A9) & Boss Room Detection
+                    if len(ram) > 0x01A9:
                         was_in_boss_room = self.in_boss_room
-                        self.boss_hp = int(ram[0x01AA])
+                        self.boss_hp = int(ram[0x01A9])
                         self.in_boss_room = (self.boss_hp > 0 and self.stage in (3, 6, 9, 12, 15, 18))
                         if self.in_boss_room and not was_in_boss_room:
                             self.boss_room_entries += 1
                     else:
                         self.boss_hp = 16
                         self.in_boss_room = False
+
                     if self.stage in (3, 6, 9, 12, 15, 18) and self.prev_boss_hp > 0 and self.boss_hp <= 0:
                         self.bosses_defeated.add(self.stage)
                     if self.in_boss_room and self.boss_hp < self.prev_boss_hp:
@@ -254,6 +265,8 @@ class HeadlessRetroEnv:
         self.health = 16
         self.lives = 3
         self.stage = 0
+        self.whip_level = 0
+        self.subweapon = 0
         self.boss_hp = 16
         self.prev_boss_hp = 16
         self.prev_stage = 0
@@ -266,6 +279,10 @@ class HeadlessRetroEnv:
         self.in_boss_room = False
         self.is_on_stairs = False
         self.is_door_transition = False
+        self.game_state_byte = 0x05
+        self.game_submode_byte = 0x00
+        self.stair_mode_byte = 0x00
+        self.movement_state_byte = 0x00
         self.game_completed = False
         self.completion_frame_counter = 0
         self.accumulated_reward = 0.0
@@ -295,6 +312,8 @@ class HeadlessRetroEnv:
             "health": self.health,
             "lives": self.lives,
             "stage": self.stage,
+            "whip_level": self.whip_level,
+            "subweapon": self.subweapon,
             "boss_hp": self.boss_hp,
             "in_boss_room": self.in_boss_room,
             "is_on_stairs": self.is_on_stairs,
@@ -302,6 +321,8 @@ class HeadlessRetroEnv:
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "game_state_byte": self.game_state_byte,
+            "game_submode_byte": self.game_submode_byte,
+            "stair_mode_byte": self.stair_mode_byte,
             "max_stage": self.max_stage,
             "progress_score": self.max_x_pos,
             "area_id": f"stage_{self.stage}_screen_{self.coarse_screen}",
@@ -436,6 +457,8 @@ class HeadlessRetroEnv:
             "health": self.health,
             "lives": self.lives,
             "stage": self.stage,
+            "whip_level": self.whip_level,
+            "subweapon": self.subweapon,
             "boss_hp": self.boss_hp,
             "in_boss_room": self.in_boss_room,
             "is_on_stairs": self.is_on_stairs,
@@ -443,6 +466,8 @@ class HeadlessRetroEnv:
             "game_completed": self.game_completed,
             "auto_restarted": self.auto_restarted,
             "game_state_byte": self.game_state_byte,
+            "game_submode_byte": self.game_submode_byte,
+            "stair_mode_byte": self.stair_mode_byte,
             "max_stage": self.max_stage,
             "progress_score": self.max_x_pos,
             "area_id": f"stage_{self.stage}_screen_{self.coarse_screen}",

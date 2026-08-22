@@ -104,12 +104,12 @@ class CastlevaniaAutonomousEngine:
             return obs, reward, term, trunc, info
 
         system_state = ram[0x0018]
-        current_stage = ram[0x0070] if len(ram) > 0x0070 else ram[0x002A]
-        player_health = ram[0x0044] if len(ram) > 0x0044 else ram[0x0045]
-        boss_health = ram[0x01AA] if len(ram) > 0x01AA else ram[0x005D]
+        current_stage = ram[0x0028] if len(ram) > 0x0028 else ram[0x002A]
+        player_health = ram[0x0045] if len(ram) > 0x0045 else ram[0x0044]
+        boss_health = ram[0x01A9] if len(ram) > 0x01A9 else ram[0x01AA]
 
         # Check boss defeat snapshot trigger
-        if boss_health == 0 and self.prev_boss_health > 0 and current_stage in (2, 3, 5, 6, 8, 9, 11, 12, 15, 18):
+        if boss_health == 0 and self.prev_boss_health > 0 and current_stage in (3, 6, 9, 12, 15, 18):
             self.trigger_boss_snapshot(rl_agent, current_stage)
             self.boss_just_defeated = True
 
@@ -123,7 +123,7 @@ class CastlevaniaAutonomousEngine:
             self.current_state = "GAME_OVER"
         elif system_state in (0x03, 0x0C):
             self.current_state = "TRANSITION"
-        elif self.boss_just_defeated or (boss_health == 0 and current_stage in (2, 3, 5, 6, 8, 9, 11, 12, 15, 18)):
+        elif self.boss_just_defeated or (boss_health == 0 and current_stage in (3, 6, 9, 12, 15, 18)):
             self.current_state = "BOSS_CLEAR"
         else:
             self.current_state = "PLAYING"

@@ -18,11 +18,14 @@ from env.retro_env import HeadlessRetroEnv
 def train_imitation(paths, output_path, epochs, learning_rate):
     actions = parse_walkthroughs(paths)
     env = HeadlessRetroEnv(obs_type="ram", use_retro=True)
-    model = ActorCriticPPO(input_dim=15, num_actions=len(ACTION_NAMES), is_mlp=True)
+    obs, _ = env.reset(seed=0)
+    input_dim = obs.shape[0]
+
+    model = ActorCriticPPO(input_dim=input_dim, num_actions=len(ACTION_NAMES), is_mlp=True)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
     observations = []
     labels = []
-    obs, _ = env.reset(seed=0)
     for action in actions:
         observations.append(obs.copy())
         labels.append(action)
@@ -42,6 +45,7 @@ def train_imitation(paths, output_path, epochs, learning_rate):
         optimizer.step()
         print(f"Imitation epoch {epoch + 1}/{epochs}: loss={loss.item():.5f}")
 
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     torch.save({
         "episode": 0,
         "max_x_pos": 0.0,

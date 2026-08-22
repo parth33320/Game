@@ -11,9 +11,9 @@ def test_ram_vector_edge_cases_and_state_machine():
     env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
     obs, info = env.reset()
 
-    # Feature Normalization (1D vector of length 15 bounded 0.0-1.0)
+    # Feature Normalization (1D vector of length 18 bounded 0.0-1.0)
     assert isinstance(obs, np.ndarray)
-    assert obs.shape == (15,)
+    assert obs.shape == (18,)
     assert np.all(obs >= 0.0) and np.all(obs <= 1.0)
 
     # Edge Case 1: Staircase alignment trap -> Action restricted to UP/DOWN
@@ -65,7 +65,7 @@ def test_autonomous_state_machine_and_checkpoints(tmp_path):
         max_episodes_before_flush=2
     )
 
-    model = ActorCriticPPO(input_dim=15, num_actions=9, is_mlp=True)
+    model = ActorCriticPPO(input_dim=18, num_actions=9, is_mlp=True)
 
     # Test boss snapshot trigger
     engine.trigger_boss_snapshot(model, stage=3)

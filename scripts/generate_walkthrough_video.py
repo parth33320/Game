@@ -72,7 +72,8 @@ def generate_walkthrough_video(
     Also supports live streaming via YouTube RTMP.
     """
     env = HeadlessRetroEnv(obs_type="ram", use_retro=True)
-    model = ActorCriticPPO(input_dim=15, num_actions=len(env.ACTION_NAMES), is_mlp=True)
+    obs, info = env.reset()
+    model = ActorCriticPPO(input_dim=obs.shape[0], num_actions=len(env.ACTION_NAMES), is_mlp=True)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
@@ -82,8 +83,6 @@ def generate_walkthrough_video(
         print(f"Initializing RTMP stream to {rtmp_url}/{stream_key}...")
         streamer = FFmpegRestreamStreamer(stream_key=stream_key, rtmp_url=rtmp_url, width=width, height=height, fps=fps)
         streamer.start_stream(raw_pipe=True)
-
-    obs, info = env.reset()
 
     for step in range(1, num_steps + 1):
         # Action selection from MLP policy

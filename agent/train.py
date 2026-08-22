@@ -10,7 +10,7 @@ from audit.audit_logger import AuditLogger
 class PPOTrainer:
     """
     CPU-optimized Multi-Layer Perceptron (MLP) PPO Trainer for Castlevania NES environment.
-    Runs at maximum speed up (~400-800 FPS) on CPU using 1D normalized RAM vectors (~15 features).
+    Runs at maximum speed up (~400-800 FPS) on CPU using 1D normalized RAM vectors (18 features).
     Supports checkpointing, metrics logging, transfer learning, and auto-resumption.
     """
     def __init__(
@@ -30,25 +30,45 @@ class PPOTrainer:
         os.makedirs(checkpoint_dir, exist_ok=True)
         os.makedirs(log_dir, exist_ok=True)
 
-        input_dim = 15 if is_mlp else 4
+        initial_obs, _ = self.env.reset()
+        input_dim = initial_obs.shape[0] if is_mlp else 4
         num_actions = len(self.env.ACTION_NAMES)
 
         self.model = ActorCriticPPO(input_dim=input_dim, num_actions=num_actions, is_mlp=is_mlp)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
     def load_latest_checkpoint(self) -> Optional[str]:
-        if not os.path.exists(self.checkpoint_dir):
-            return None
-        ckpts = [os.path.join(self.checkpoint_dir, f) for f in os.listdir(self.checkpoint_dir) if f.endswith(".pt")]
-        if not ckpts:
-            return None
-        ckpts.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-        return ckpts[0]
+        # Priority 1: Explicit resume target or latest model checkpoint in checkpoint_dir
+        resume_target = os.path.join(self.checkpoint_dir, "resume_target.pt")
+        if os.path.exists(resume_target):
+            return resume_target
+
+        latest_weights = os.path.join(self.checkpoint_dir, "model_weights_latest.pt")
+        if os.path.exists(latest_weights):
+            return latest_weights
+
+        if os.path.exists(self.checkpoint_dir):
+            ckpts = [
+                os.path.join(self.checkpoint_dir, f)
+                for f in os.listdir(self.checkpoint_dir)
+                if f.endswith(".pt") and f not in ("imitation_baseline.pt", "resume_target.pt")
+            ]
+            if ckpts:
+                ckpts.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                return ckpts[0]
+
+        # Priority 2: Fallback to imitation baseline warm-start anchor
+        baseline = os.path.join(self.checkpoint_dir, "imitation_baseline.pt")
+        if os.path.exists(baseline):
+            print(f"[PPO Warm Start] Defaulting to imitation baseline anchor: {baseline}")
+            return baseline
+
+        return None
 
     def train(self, total_timesteps: int = 5000, checkpoint_freq: int = 1000) -> Dict[str, Any]:
         latest_ckpt = self.load_latest_checkpoint()
         if latest_ckpt:
-            print(f"Resuming training from latest checkpoint: {latest_ckpt}")
+            print(f"Resuming training from checkpoint: {latest_ckpt}")
             self.model.load_checkpoint_weights(latest_ckpt, self.optimizer)
         else:
             print("No existing checkpoint found. Initializing new PPO policy network...")
