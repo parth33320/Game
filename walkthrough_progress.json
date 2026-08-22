@@ -1,16 +1,496 @@
 [
   {
-    "path": "CastlevaniaTAS.bk2",
-    "frames": 40573,
-    "progress_score": 3217.0,
+    "path": "CVWIP40frames.bk2",
+    "frames": 40769,
+    "progress_score": 3218.0,
     "max_stage": 1,
-    "visited_area_count": 9,
-    "stage_transition_count": 2,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
     "boss_room_entries": 0,
     "boss_damage_total": 0,
     "bosses_defeated": [],
     "completion": false,
-    "termination": "timeout"
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CVWIP47frames.bk2",
+    "frames": 40762,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CVWIP51frames.bk2",
+    "frames": 40758,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania (PRG1 version).bk2",
+    "frames": 37213,
+    "progress_score": 3233.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania Pacifist (PRG1 version).bk2",
+    "frames": 40142,
+    "progress_score": 3277.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania TAS.bk2",
+    "frames": 40819,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania by D.bk2",
+    "frames": 1536,
+    "progress_score": 2150.0,
+    "max_stage": 1,
+    "visited_area_count": 4,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "running",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania pacifist (more progress).bk2",
+    "frames": 45733,
+    "progress_score": 3349.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania101frames.bk2",
+    "frames": 40708,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania123frames.bk2",
+    "frames": 40686,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania145frames.bk2",
+    "frames": 40664,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania167frames.bk2",
+    "frames": 40642,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania183frames.bk2",
+    "frames": 40626,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania185frames.bk2",
+    "frames": 40624,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania232frames.bk2",
+    "frames": 40577,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania53Frames.bk2",
+    "frames": 40756,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaPRG0-pacifist-final-v1.bk2",
+    "frames": 39556,
+    "progress_score": 3501.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaPRG0-pacifist-fix_cavet.bk2",
+    "frames": 32020,
+    "progress_score": 3501.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaPRG0-quickNes (1).bk2",
+    "frames": 9577,
+    "progress_score": 3415.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "running",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaPRG0-quickNes-7.bk2",
+    "frames": 37338,
+    "progress_score": 3415.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaPRG0-quickNes.bk2",
+    "frames": 11877,
+    "progress_score": 3415.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "running",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "CastlevaniaTAS.bk2",
+    "frames": 40573,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevania_anyP_bk28_final_v2_36788_neshawk.bk2",
+    "frames": 36788,
+    "progress_score": 3519.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Castlevaniaver21.bk2",
+    "frames": 40578,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "NewDracRoughDraft.bk2",
+    "frames": 40730,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Stage14 (v2).bk2",
+    "frames": 30158,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Stage14.bk2",
+    "frames": 30174,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "Version20.bk2",
+    "frames": 40583,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "castlevania-pacifist-wip4.bk2",
+    "frames": 45471,
+    "progress_score": 3349.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
   },
   {
     "path": "challanger,eien86-castlevania.bk2",
@@ -23,32 +503,178 @@
     "boss_damage_total": 0,
     "bosses_defeated": [],
     "completion": false,
-    "termination": "timeout"
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "challenger,grincevent-castlevania-pacifist,minimalist.bk2",
+    "frames": 44791,
+    "progress_score": 3350.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "challenger,morrison-castlevania.bk2",
+    "frames": 40573,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "challenger-castlevania-nes-pacifist,minimalist.bk2",
+    "frames": 40117,
+    "progress_score": 3391.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "challenger-castlevania.bk2",
+    "frames": 40809,
+    "progress_score": 3218.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "challengerv2-castlevania.bk2",
+    "frames": 37196,
+    "progress_score": 3271.0,
+    "max_stage": 1,
+    "visited_area_count": 8,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
   },
   {
     "path": "eien86_challenger-castlevania-pacifist_minimalist.bk2",
     "frames": 39390,
-    "progress_score": 1163.0,
+    "progress_score": 3314.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
+  },
+  {
+    "path": "axes_are_faster.fm2",
+    "frames": 2088,
+    "progress_score": 489.0,
     "max_stage": 0,
-    "visited_area_count": 5,
+    "visited_area_count": 2,
     "stage_transition_count": 0,
     "boss_room_entries": 0,
     "boss_damage_total": 0,
     "bosses_defeated": [],
     "completion": false,
-    "termination": "timeout"
+    "termination": "running",
+    "saved_stages": [
+      0
+    ]
+  },
+  {
+    "path": "death.fm2",
+    "frames": 656,
+    "progress_score": 136.0,
+    "max_stage": 0,
+    "visited_area_count": 1,
+    "stage_transition_count": 0,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "running",
+    "saved_stages": [
+      0
+    ]
+  },
+  {
+    "path": "grincevent-pacifist-castlevania.fm2",
+    "frames": 46481,
+    "progress_score": 3313.0,
+    "max_stage": 1,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
+    "boss_room_entries": 0,
+    "boss_damage_total": 0,
+    "bosses_defeated": [],
+    "completion": false,
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
   },
   {
     "path": "scrimpeh-castlevania-nosubweapons_nodamage.fm2",
     "frames": 47985,
     "progress_score": 3519.0,
     "max_stage": 1,
-    "visited_area_count": 8,
-    "stage_transition_count": 2,
+    "visited_area_count": 9,
+    "stage_transition_count": 1,
     "boss_room_entries": 0,
     "boss_damage_total": 0,
     "bosses_defeated": [],
     "completion": false,
-    "termination": "timeout"
+    "termination": "game_over",
+    "saved_stages": [
+      0,
+      1
+    ]
   }
 ]

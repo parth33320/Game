@@ -52,8 +52,8 @@ def test_dynamic_timeout_and_reward_hacking_detection():
 
 def test_pytorch_ppo_actor_critic_shapes():
     # 1D MLP
-    model_mlp = ActorCriticPPO(input_dim=15, num_actions=9, is_mlp=True)
-    fake_obs = torch.zeros((1, 15), dtype=torch.float32)
+    model_mlp = ActorCriticPPO(input_dim=18, num_actions=9, is_mlp=True)
+    fake_obs = torch.zeros((1, 18), dtype=torch.float32)
 
     logits, value = model_mlp(fake_obs)
     assert logits.shape == (1, 9)
@@ -79,7 +79,7 @@ def test_headless_retro_env_ram_edge_cases():
     env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
     obs, info = env.reset()
 
-    assert obs.shape == (15,)
+    assert obs.shape == (18,)
 
     # Test stair restriction
     env.is_on_stairs = True
@@ -102,7 +102,7 @@ def test_stable_retro_game_completion_and_auto_restart():
     env = HeadlessRetroEnv(obs_type="ram", use_retro=False)
     obs, info = env.reset()
 
-    assert obs.shape == (15,)
+    assert obs.shape == (18,)
 
     # Test completion gate frame counter
     env.stage = 18
