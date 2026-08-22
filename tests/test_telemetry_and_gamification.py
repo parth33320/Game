@@ -3,6 +3,7 @@ import asyncio
 import time
 import json
 import urllib.request
+import urllib.parse
 
 from telemetry.telemetry_overlay import TelemetryPublisher
 from chat.challenge_evaluator import ChallengeEvaluator, SafeASTEvaluator
@@ -38,6 +39,63 @@ def test_telemetry_publisher_state_and_http_server():
         assert req_html.status == 200
         html = req_html.read().decode("utf-8")
         assert "24/7 AI TELEMETRY" in html
+    finally:
+        publisher.stop_server()
+
+def test_telemetry_retraining_loop_api_and_dashboard():
+    publisher = TelemetryPublisher(host="127.0.0.1", port=8090)
+    publisher.start_server()
+    time.sleep(0.2)
+    try:
+        # Check initial training state in snapshot
+        snapshot = publisher.get_state_snapshot()
+        assert "training_status" in snapshot
+        assert snapshot["training_status"]["retraining_active"] is False
+
+        # POST to update training stats
+        post_data = json.dumps({
+            "epoch": 42,
+            "loss": 0.015,
+            "curriculum_stage": 3,
+            "best_x_pos": 1420
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8090/api/update_training",
+            data=post_data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            res_json = json.loads(resp.read().decode("utf-8"))
+            assert res_json["status"] == "updated"
+
+        # Verify snapshot updated
+        snap2 = publisher.get_state_snapshot()
+        assert snap2["training_status"]["epoch"] == 42
+        assert snap2["training_status"]["loss"] == 0.015
+        assert snap2["training_status"]["best_x_pos"] == 1420
+
+        # POST trigger retrain
+        retrain_req = urllib.request.Request(
+            "http://127.0.0.1:8090/api/trigger_retrain",
+            data=json.dumps({"reason": "Manual Trigger"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(retrain_req) as resp:
+            assert resp.status == 200
+            res_json = json.loads(resp.read().decode("utf-8"))
+            assert res_json["status"] == "retraining_triggered"
+
+        snap3 = publisher.get_state_snapshot()
+        assert snap3["training_status"]["retraining_active"] is True
+
+        # Check HTML overlay UI contains retrain button and training section
+        req_html = urllib.request.urlopen("http://127.0.0.1:8090/")
+        html = req_html.read().decode("utf-8")
+        assert "btn-retrain" in html
+        assert "training-epoch" in html
     finally:
         publisher.stop_server()
 
